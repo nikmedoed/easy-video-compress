@@ -3,6 +3,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
@@ -13,6 +14,7 @@ AUDIO_BITRATE = 64_000
 EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
 
 console = Console(log_time=True, log_path=False)
+
 
 def get_duration(path: Path) -> float:
     """Return video duration in seconds."""
@@ -36,7 +38,12 @@ def find_videos(path: Path):
 
 def _compress_crf(input_path: Path, output_path: Path, crf: int, preset: str, progress: Progress):
     """Compress video using CRF."""
-    duration = get_duration(input_path)
+    try:
+        duration = get_duration(input_path)
+    except Exception as e:
+        console.log(f"[yellow]⚠️ Пропускаю (не видео?): {input_path.name} ({e})[/]")
+        return
+
     task = progress.add_task(input_path.name, total=duration)
     console.log(f"Starting: {input_path.name}")
 
@@ -52,11 +59,13 @@ def _compress_crf(input_path: Path, output_path: Path, crf: int, preset: str, pr
             progress.update(task, completed=duration)
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         else:
-            proc = subprocess.Popen(cmd[:-1] + ["-progress", "pipe:1", "-nostats", cmd[-1]],
-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            proc = subprocess.Popen(
+                cmd[:-1] + ["-progress", "pipe:1", "-nostats", cmd[-1]],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
             for line in proc.stdout:
                 if line.startswith("out_time_ms="):
-                    raw = line.split("=", 1)[1].strip()  # ← .strip() убирает \n
+                    raw = line.split("=", 1)[1].strip()
                     try:
                         ms = int(raw)
                         progress.update(task, completed=ms / 1_000_000)
@@ -67,11 +76,9 @@ def _compress_crf(input_path: Path, output_path: Path, crf: int, preset: str, pr
 
             proc.wait()
             if proc.returncode != 0:
-                console.log(
-                    f"[red]❌ ffmpeg finished with code {proc.returncode}: "
-                    f"{input_path.name}[/]"
-                )
+                console.log(f"[red]❌ ffmpeg finished with code {proc.returncode}: {input_path.name}[/]")
                 return
+
         progress.update(task, completed=duration)
         console.log(f"Completed: {input_path.name}")
     except Exception as e:
@@ -80,38 +87,45 @@ def _compress_crf(input_path: Path, output_path: Path, crf: int, preset: str, pr
 
 def _get_video_info(input_file: Path):
     """Return width, height, bitrate, duration."""
-    cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,bit_rate",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(input_file),
-    ]
-    out = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, check=True).stdout.strip().splitlines()
+    out = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,bit_rate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(input_file),
+        ],
+        stdout=subprocess.PIPE, text=True, check=True
+    ).stdout.strip().splitlines()
     width, height, bit_rate = map(int, out)
     return width, height, bit_rate, get_duration(input_file)
 
 
 def _find_optimal(width: int, height: int, duration: float, target_size_b: int):
     """Find optimal resolution and bitrate."""
-    scale=1.0
+    scale = 1.0
     while True:
-        v_bitrate = (target_size_b*8 - AUDIO_BITRATE*duration)/duration
-        min_bitrate = width*height*(scale**2)*0.1
+        v_bitrate = (target_size_b * 8 - AUDIO_BITRATE * duration) / duration
+        min_bitrate = width * height * (scale ** 2) * 0.1
         if v_bitrate < min_bitrate:
             scale *= 0.9
         else:
-            return int(width*scale), int(height*scale), int(v_bitrate)
+            return int(width * scale), int(height * scale), int(v_bitrate)
 
 
 def _compress_to_size(input_path: Path, progress: Progress):
     """Compress video to approximately TARGET_SIZE_MB."""
     out_path = input_path.with_name(f"{input_path.stem}_smaller{input_path.suffix}")
-    duration = get_duration(input_path)
+    try:
+        duration = get_duration(input_path)
+    except Exception as e:
+        console.log(f"[yellow]⚠️ Пропускаю (не видео?): {input_path.name} ({e})[/]")
+        return
+
     task = progress.add_task(input_path.name, total=duration)
     console.log(f"Starting: {input_path.name}")
 
     width, height, _, duration = _get_video_info(input_path)
-    target_b = int(TARGET_SIZE_MB*1024*1024)
+    target_b = int(TARGET_SIZE_MB * 1024 * 1024)
     w, h, v_bitrate = _find_optimal(width, height, duration, target_b)
 
     cmd = [
@@ -131,13 +145,16 @@ def _compress_to_size(input_path: Path, progress: Progress):
 
 
 def main():
-    """Entry point."""
     args = sys.argv
-    if len(args)>1 and args[1]=="5":
-        inputs = [Path(i) for i in args[2:]]
+    if len(args) > 1 and args[1] == "5":
+        raw = args[2:]
         targets = []
-        for p in inputs:
+        for s in raw:
+            p = Path(s)
             if p.is_file():
+                if p.suffix.lower() not in EXTS:
+                    console.log(f"[yellow]⚠️ Пропускаю неподдерживаемый файл: {p.name}[/]")
+                    continue
                 targets.append(p)
             elif p.is_dir():
                 targets.extend(find_videos(p))
@@ -146,9 +163,18 @@ def main():
         if not targets:
             console.log("No files to process.")
             sys.exit(0)
-        with Progress(TextColumn("{task.description}"), BarColumn(), "[progress.percentage]{task.percentage:>3.0f}%", TimeRemainingColumn(), console=console) as progress:
-            with ThreadPoolExecutor(max_workers=min(len(targets),MAX_WORKERS)) as executor:
-                for _ in as_completed([executor.submit(_compress_to_size, t, progress) for t in targets]):
+
+        with Progress(
+                TextColumn("[bold green]{task.description}"),
+                BarColumn(bar_width=None),
+                "[progress.percentage]{task.percentage:>3.0f}%",
+                TimeRemainingColumn(),
+                console=console,
+                transient=False
+        ) as progress:
+            with ThreadPoolExecutor(max_workers=min(len(targets), MAX_WORKERS)) as exe:
+                futures = [exe.submit(_compress_to_size, t, progress) for t in targets]
+                for _ in as_completed(futures):
                     pass
         return
 
@@ -159,17 +185,21 @@ def main():
     parser.add_argument("-preset", default="slow")
     opts = parser.parse_args()
 
-    videos=[]
+    videos = []
     for inp in opts.inputs:
-        p=Path(inp)
+        p = Path(inp)
         if p.is_file():
-            videos.append((p, p.with_name(f"{p.stem}_compressed.mp4")))
+            if p.suffix.lower() not in EXTS:
+                console.log(f"[yellow]⚠️ Пропускаю неподдерживаемый файл: {p.name}[/]")
+                continue
+            out = p.with_name(f"{p.stem}_compressed.mp4")
+            videos.append((p, out))
         elif p.is_dir():
             outdir = Path(opts.output) if opts.output else p.parent
-            outdir = outdir/ f"{p.name}_compressed"
+            outdir = outdir / f"{p.name}_compressed"
             outdir.mkdir(parents=True, exist_ok=True)
             for v in find_videos(p):
-                videos.append((v, outdir/ f"{v.stem}_compressed.mp4"))
+                videos.append((v, outdir / f"{v.stem}_compressed.mp4"))
         else:
             console.log(f"[red]Not found: {p}[/]")
 
@@ -177,10 +207,22 @@ def main():
         console.log("No files to process.")
         sys.exit(0)
 
-    with Progress(TextColumn("{task.description}"), BarColumn(), "[progress.percentage]{task.percentage:>3.0f}%", TimeRemainingColumn(), console=console) as progress:
-        with ThreadPoolExecutor(max_workers=min(len(videos),MAX_WORKERS)) as executor:
-            for _ in as_completed([executor.submit(_compress_crf,i,o,opts.crf,opts.preset,progress) for i,o in videos]):
+    with Progress(
+            TextColumn("[bold green]{task.description}"),
+            BarColumn(bar_width=None),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TimeRemainingColumn(),
+            console=console,
+            transient=False
+    ) as progress:
+        with ThreadPoolExecutor(max_workers=min(len(videos), MAX_WORKERS)) as exe:
+            futures = [
+                exe.submit(_compress_crf, inp, out, opts.crf, opts.preset, progress)
+                for inp, out in videos
+            ]
+            for _ in as_completed(futures):
                 pass
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
