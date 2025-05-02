@@ -1,51 +1,53 @@
-# win_install.ps1 — единый инсталлятор контекстного меню
-# --------------------------------------------------------
-
-# 0) Elevate to admin if needed
+# Elevate to admin if needed
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
     ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process pwsh -Verb RunAs -ArgumentList "-NoProfile","-ExecutionPolicy Bypass","-File `"$PSCommandPath`""
     exit
 }
 
-# 1) Paths
-$root    = Split-Path -Parent $PSCommandPath
-$bat     = Join-Path $root 'compress.bat'
-$icon    = Join-Path $root 'icon\icon.ico'
+# Define paths
+$root = Split-Path -Parent $PSCommandPath
+$bat  = Join-Path $root 'compress.bat'
+$icon = Join-Path $root 'icon\icon.ico'
 
 if (-not (Test-Path $bat)) {
-    Write-Error "❌ compress.bat не найден в $root`nПоложите ваш launcher сюда и запустите ещё раз."
+    Write-Error "❌ compress.bat not found in $root`nPlace your launcher here and run again."
     exit 1
 }
 
-# 2) Сносим старые ключи (AllFileSystemObjects + индивидуальные)
-$old = @()
-$old += 'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo'
+# Remove old context-menu keys
+$oldKeys = @(
+    'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo',
+    'HKCU:\Software\Classes\Directory\shell\CompressVideo'
+)
 $exts = '.mp4','.mkv','.avi','.mov','.flv','.wmv','.webm'
 foreach ($e in $exts) {
-    $old += "HKCU:\Software\Classes\SystemFileAssociations\$e\shell\CompressVideo"
+    $oldKeys += "HKCU:\Software\Classes\SystemFileAssociations\$e\shell\CompressVideo"
 }
-$old += 'HKCU:\Software\Classes\Directory\shell\CompressVideo'
-foreach ($p in $old) { if (Test-Path $p) { Remove-Item $p -Recurse -Force } }
+foreach ($key in $oldKeys) {
+    if (Test-Path $key) {
+        Remove-Item $key -Recurse -Force
+    }
+}
 
-# 3) Создаём единый ключ под AllFileSystemObjects с AppliesTo
-$base = 'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo'
-New-Item -Path $base -Force | Out-Null
+# Create unified context-menu entry
+$baseKey = 'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo'
+New-Item -Path $baseKey -Force | Out-Null
 
-# 3a) Локализация названия
+# Set menu label based on UI culture
 if ([System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq 'ru') {
     $label = 'Сжать видео (FFmpeg)'
 } else {
     $label = 'Compress video (FFmpeg)'
 }
-Set-ItemProperty -Path $base -Name '(Default)' -Value $label
+Set-ItemProperty -Path $baseKey -Name '(Default)' -Value $label
 
-# 3b) Иконка (опционально)
+# Set icon if available
 if (Test-Path $icon) {
-    Set-ItemProperty -Path $base -Name 'Icon' -Value $icon
+    Set-ItemProperty -Path $baseKey -Name 'Icon' -Value $icon
 }
 
-# 3c) Фильтр — только видео-расширения и папки
+# Filter for folders and video file types
 $filter = @(
     'System.ItemType:=Directory',
     'System.FileExtension:=.mp4',
@@ -56,35 +58,48 @@ $filter = @(
     'System.FileExtension:=.wmv',
     'System.FileExtension:=.webm'
 ) -join ' OR '
-Set-ItemProperty -Path $base -Name 'AppliesTo' -Value $filter
+Set-ItemProperty -Path $baseKey -Name 'AppliesTo' -Value $filter
 
-# 3d) Одно окно на все файлы
-Set-ItemProperty -Path $base -Name 'MultiSelectModel' -Value 'Player'
+# Single window for multiple selections
+Set-ItemProperty -Path $baseKey -Name 'MultiSelectModel' -Value 'Player'
 
-# 4) Команда — открываем CMD и держим окно открытым
-$cmdKey = "$base\command"
+# Define the command to run
+$cmdKey = "$baseKey\command"
 New-Item -Path $cmdKey -Force | Out-Null
-
-# Командная строка вида:
-#   cmd.exe /k "C:\full\path\to\compress.bat" %*
-$command = "cmd.exe /k `"$bat`" \"%V\""
+$command = "cmd.exe /c `"$bat`" %V"
 Set-ItemProperty -Path $cmdKey -Name '(Default)' -Value $command
 
-# MultiSelectModel уже стоит в 'Player', оставляем как есть
-
-# 5) Устанавливаем ffmpeg через winget, если не найден
+# Install ffmpeg via winget if missing
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-    Write-Host '⏳ Устанавливаю ffmpeg через winget…'
+    Write-Host '⏳ Installing ffmpeg via winget…'
     Start-Process winget -ArgumentList 'install --exact --id FFmpeg.FFmpeg -e --source winget' `
         -NoNewWindow -Wait
     if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
-        Write-Host '✅ ffmpeg установлен.'
+        Write-Host '✅ ffmpeg installed.'
     } else {
-        Write-Warning '⚠️ Не удалось установить ffmpeg через winget. Поставьте его вручную.'
+        Write-Warning '⚠️ Could not install ffmpeg via winget. Please install manually.'
     }
 } else {
-    Write-Host 'ℹ️ ffmpeg уже установлен.'
+    Write-Host 'ℹ️ ffmpeg is already installed.'
 }
 
-Write-Host "`n🎉 Установка завершена! Перезапустите проводник (или откройте новое окно) и проверьте пункт:" `
-         "`n   ПКМ → $label (на видео-файлах / папках)`n"
+# Add compress function to PowerShell profile if not present
+$profilePath = $PROFILE
+if (-not (Test-Path -Path $profilePath)) {
+    New-Item -ItemType File -Path $profilePath -Force | Out-Null
+}
+$profileText = Get-Content -Path $profilePath -Raw
+if ($profileText -notmatch 'function\s+compress') {
+    $functionDef = @"
+function compress {
+    & 'python' 'D:\System\toPath\compress\compress.py' @Args
+}
+"@
+    Add-Content -Path $profilePath -Value $functionDef
+    Write-Host "✅ Added 'compress' function to your PowerShell profile at $profilePath"
+} else {
+    Write-Host "ℹ️ 'compress' function already exists in your PowerShell profile."
+}
+
+Write-Host "`n🎉 Installation complete! Restart Explorer or open a new window and check context menu:"`
+Write-Host "    Right-click → $label (on videos/folders)"
