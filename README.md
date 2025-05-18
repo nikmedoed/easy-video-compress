@@ -106,6 +106,16 @@ This installer will also automatically install FFmpeg via `winget` if it is not 
 * **`win_install.ps1`**: PowerShell script to install context-menu hooks and ensure FFmpeg is installed.
 * **`requirements.txt`**: Lists Python dependencies (`rich`).
 
-## License
+## 💖 Support my work
 
-This project is open source and available under the MIT License.
+<table align="center" border="0" cellpadding="0" cellspacing="0">
+  <tr>
+    <td><a href="https://ko-fi.com/nikmedoed"><img src="https://img.shields.io/badge/Ko--fi-donate-FF5E5B?logo=kofi" alt="Ko-fi" border="0"></a></td>
+    <td><a href="https://boosty.to/nikmedoed/donate"><img src="https://img.shields.io/badge/Boosty-donate-FB400B?logo=boosty" alt="Boosty" border="0"></a></td>
+    <td><a href="https://paypal.me/etonikmedoed"><img src="https://img.shields.io/badge/PayPal-donate-00457C?logo=paypal" alt="PayPal" border="0"></a></td>
+    <td><a href="https://yoomoney.ru/to/4100119049495394"><img src="https://img.shields.io/badge/YooMoney-donate-8b3ffd?logo=yoomoney" alt="YooMoney" border="0"></a></td>
+    <td><a href="https://github.com/nikmedoed#-support-my-work"><img src="https://img.shields.io/badge/Other-more-lightgrey?logo=github" alt="Other" border="0"></a></td>
+  </tr>
+</table>
+
+---
