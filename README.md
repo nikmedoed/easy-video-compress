@@ -117,5 +117,3 @@ This installer will also automatically install FFmpeg via `winget` if it is not 
     <td><a href="https://github.com/nikmedoed#-support-my-work"><img src="https://img.shields.io/badge/Other-more-lightgrey?logo=github" alt="Other" border="0"></a></td>
   </tr>
 </table>
-
----
