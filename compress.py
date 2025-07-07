@@ -2,16 +2,13 @@ import argparse
 import subprocess
 import sys
 import os
-import threading
 import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
-import tkinter as tk
-from tkinter import ttk, filedialog, BooleanVar
-from tkinterdnd2 import DND_FILES, TkinterDnD
+from PyQt5 import QtWidgets, QtCore, QtGui
 
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
 SHORT_THRESHOLD = 2.0
@@ -215,32 +212,51 @@ def open_in_folder(path: Path):
         subprocess.Popen(["xdg-open", folder])
 
 
+class DropTable(QtWidgets.QTableWidget):
+    files_dropped = QtCore.pyqtSignal(list)
+
+    def __init__(self, columns: int, parent=None):
+        super().__init__(0, columns, parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        paths = [u.toLocalFile() for u in event.mimeData().urls()]
+        self.files_dropped.emit(paths)
+
+
 def run_gui():
-    root = TkinterDnD.Tk()
-    root.title("Video Compress")
+    app = QtWidgets.QApplication(sys.argv)
+    win = QtWidgets.QWidget()
+    win.setWindowTitle("Video Compress")
     try:
+        icon_path = Path(__file__).with_name("icon/icon.png")
         if sys.platform.startswith("win"):
-            root.iconbitmap(Path(__file__).with_name("icon/icon.ico"))
-        else:
-            img = tk.PhotoImage(file=Path(__file__).with_name("icon/icon.png"))
-            root.iconphoto(True, img)
+            icon_path = Path(__file__).with_name("icon/icon.ico")
+        win.setWindowIcon(QtGui.QIcon(str(icon_path)))
     except Exception:
         pass
 
-    style = ttk.Style(root)
-    style.configure("Alt.TButton", padding=(2, 0), anchor="center")
+    layout = QtWidgets.QVBoxLayout(win)
+    top = QtWidgets.QHBoxLayout()
+    layout.addLayout(top)
 
-    top = ttk.Frame(root)
-    top.pack(fill="x")
+    size_box = QtWidgets.QCheckBox("5MB mode")
+    top.addWidget(size_box)
 
-    size_var = BooleanVar(value=False)
-    chk = ttk.Checkbutton(top, text="5MB mode", variable=size_var)
-    chk.pack(side="left", padx=5, pady=5)
+    add_btn = QtWidgets.QPushButton("Add Videos")
+    top.addWidget(add_btn)
 
-    btn = ttk.Button(top, text="Add Videos")
-    btn.pack(side="left", padx=5, pady=5)
+    overall_bar = QtWidgets.QProgressBar()
+    overall_bar.setMinimumWidth(150)
+    overall_label = QtWidgets.QLabel("0/0")
+    top.addWidget(overall_bar, 1)
+    top.addWidget(overall_label)
 
-    columns = (
+    columns = [
         "file",
         "codec",
         "bitrate",
@@ -250,108 +266,83 @@ def run_gui():
         "five_mb",
         "alt",
         "progress",
-    )
-    tree = ttk.Treeview(root, columns=columns, show="headings")
-    widths = {
-        "file": 200,
-        "codec": 70,
-        "bitrate": 80,
-        "duration": 80,
-        "size": 80,
-        "result": 80,
-        "five_mb": 60,
-        "alt": 50,
-        "progress": 150,
-    }
-    for c in columns:
-        heading = "5MB?" if c == "five_mb" else c.title()
-        tree.heading(c, text=heading)
-        tree.column(c, width=widths[c], anchor="center")
-    tree.column("file", anchor="w")
+    ]
+    table = DropTable(len(columns))
+    table.setHorizontalHeaderLabels(["File", "Codec", "Bitrate", "Duration", "Size", "Result", "5MB?", "Alt", "Progress"])
+    table.horizontalHeader().setStretchLastSection(False)
+    table.setColumnWidth(0, 200)
+    table.setColumnWidth(1, 70)
+    table.setColumnWidth(2, 80)
+    table.setColumnWidth(3, 80)
+    table.setColumnWidth(4, 80)
+    table.setColumnWidth(5, 80)
+    table.setColumnWidth(6, 60)
+    table.setColumnWidth(7, 50)
+    table.setColumnWidth(8, 150)
+    table.verticalHeader().setVisible(False)
+    table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+    table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+    table.setSortingEnabled(False)
+    layout.addWidget(table)
 
-    vsb = ttk.Scrollbar(root, orient="vertical")
-    vsb.pack(side="right", fill="y")
-
+    scroll_bar = table.verticalScrollBar()
     auto_scroll = True
 
-    def yview(*args):
+    def on_scroll(*_):
         nonlocal auto_scroll
-        tree.yview(*args)
         auto_scroll = False
-        place_all()
+    scroll_bar.valueChanged.connect(on_scroll)
 
-    vsb.config(command=yview)
-    tree.configure(yscrollcommand=vsb.set)
-    tree.pack(fill="both", expand=True, padx=5, pady=5)
-    tree.bind("<Configure>", lambda e: place_all())
-    root.bind("<Configure>", lambda e: place_all())
-
-    pbars: dict[str, ttk.Progressbar] = {}
-    alts: dict[str, ttk.Button] = {}
-    info: dict[str, dict[str, object]] = {}
-
-    last_idx = -1
-    scroll_scheduled = False
-
-    def _do_scroll():
-        nonlocal scroll_scheduled, last_idx
-        scroll_scheduled = False
-        if not auto_scroll:
-            return
-        items = tree.get_children()
-        for it in items:
-            if pbars.get(it) and not info.get(it, {}).get("done") and float(pbars[it]["value"]) < 100:
-                idx = items.index(it)
-                if idx != last_idx:
-                    tree.yview_moveto(idx / len(items))
-                    last_idx = idx
-                break
-
-    def scroll_to_current():
-        nonlocal scroll_scheduled
-        if scroll_scheduled:
-            return
-        scroll_scheduled = True
-        root.after(100, _do_scroll)
-
-    def scroll_to(item):
-        children = tree.get_children()
-        if not children:
-            return
-        idx = children.index(item)
-        tree.yview_moveto(idx / len(children))
+    info = {}
+    progress_bars = {}
+    alt_buttons = {}
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
     total = 0
     done = 0
-
-    overall_bar = ttk.Progressbar(top, length=200)
-    overall_bar.pack(side="left", fill="x", expand=True, padx=5)
-    overall_label = ttk.Label(top, text="0/0")
-    overall_label.pack(side="left", padx=5)
-
-    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    event_q = queue.Queue()
 
     def update_overall():
         if total:
-            overall_bar["value"] = done * 100 / total
-            overall_label.config(text=f"{done}/{total}")
+            overall_bar.setValue(int(done * 100 / total))
+            overall_label.setText(f"{done}/{total}")
         else:
-            overall_bar["value"] = 0
-            overall_label.config(text="0/0")
+            overall_bar.setValue(0)
+            overall_label.setText("0/0")
 
-    def place_widget(item):
-        root.update_idletasks()
-        pbbox = tree.bbox(item, "progress")
-        if pbbox:
-            x, y, w, h = pbbox
-            pbars[item].place(x=x, y=y, width=w, height=h)
-        abbox = tree.bbox(item, "alt")
-        if abbox:
-            x, y, w, h = abbox
-            alts[item].place(x=x, y=y, width=w, height=h)
+    def scroll_to_current():
+        if not auto_scroll:
+            return
+        for row in range(table.rowCount()):
+            inf = info.get(row)
+            if inf and not inf.get("done") and progress_bars[row].value() < 100:
+                table.scrollToItem(table.item(row, 0), QtWidgets.QAbstractItemView.PositionAtTop)
+                break
 
-    def place_all():
-        for it in pbars:
-            place_widget(it)
+    def process_events():
+        nonlocal done
+        while True:
+            try:
+                evt, row, data = event_q.get_nowait()
+            except queue.Empty:
+                break
+            if evt == "progress":
+                progress_bars[row].setValue(int(data))
+            elif evt == "done":
+                progress_bars[row].setValue(100)
+                table.item(row, 5).setText(f"{data:.1f} MB")
+                info[row]["done"] = True
+                done += 1
+                update_overall()
+            elif evt == "error":
+                table.item(row, 5).setText("error")
+                info[row]["done"] = True
+                done += 1
+                update_overall()
+        scroll_to_current()
+
+    timer = QtCore.QTimer()
+    timer.timeout.connect(process_events)
+    timer.start(100)
 
     def add_files(paths, mode_override=None):
         nonlocal total, auto_scroll
@@ -361,33 +352,27 @@ def run_gui():
                 continue
             dur, codec, br = get_video_info(path)
             size_mb = path.stat().st_size / (1024 * 1024)
-            mode = mode_override or ("size" if size_var.get() else "crf")
-            row = tree.insert(
-                "",
-                "end",
-                values=(
-                    path.name,
-                    codec,
-                    f"{br//1000}k",
-                    format_duration(dur),
-                    f"{size_mb:.1f} MB",
-                    "",
-                    "✔" if mode == "size" else "",
-                    "",
-                    "",
-                ),
-            )
-            pb = ttk.Progressbar(tree, maximum=100)
-            pbars[row] = pb
-            btn_alt = ttk.Button(
-                tree,
-                text="⇆",
-                width=4,
-                style="Alt.TButton",
-                command=lambda p=str(path), m="crf" if mode == "size" else "size": add_files([p], m),
-            )
-            alts[row] = btn_alt
-            place_widget(row)
+            mode = mode_override or ("size" if size_box.isChecked() else "crf")
+            row = table.rowCount()
+            table.insertRow(row)
+            table.setItem(row, 0, QtWidgets.QTableWidgetItem(path.name))
+            table.setItem(row, 1, QtWidgets.QTableWidgetItem(codec))
+            table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{br//1000}k"))
+            table.setItem(row, 3, QtWidgets.QTableWidgetItem(format_duration(dur)))
+            table.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{size_mb:.1f} MB"))
+            table.setItem(row, 5, QtWidgets.QTableWidgetItem(""))
+            table.setItem(row, 6, QtWidgets.QTableWidgetItem("✔" if mode == "size" else ""))
+
+            btn_alt = QtWidgets.QPushButton("⇆")
+            btn_alt.setMaximumWidth(40)
+            btn_alt.clicked.connect(lambda _, p=str(path), m="crf" if mode == "size" else "size": add_files([p], m))
+            table.setCellWidget(row, 7, btn_alt)
+
+            pb = QtWidgets.QProgressBar()
+            pb.setValue(0)
+            table.setCellWidget(row, 8, pb)
+            progress_bars[row] = pb
+            alt_buttons[row] = btn_alt
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
             auto_scroll = True
             scroll_to_current()
@@ -396,67 +381,42 @@ def run_gui():
             executor.submit(process_row, row)
 
     def select_files():
-        files = filedialog.askopenfilenames(filetypes=[("Videos", "*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm")])
-        add_files(root.splitlist(files))
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(win, "Select Videos", "", "Videos (*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm)")
+        add_files(files)
 
-    btn.config(command=select_files)
-
-    def drop(event):
-        add_files(root.splitlist(event.data))
-
-    tree.drop_target_register(DND_FILES)
-    tree.dnd_bind("<<Drop>>", drop)
-
-    def on_double(event):
-        item = tree.identify_row(event.y)
-        if item:
-            open_in_folder(info[item]["path"])
-
-    tree.bind("<Double-1>", on_double)
+    add_btn.clicked.connect(select_files)
 
     def process_row(row):
-        nonlocal done, auto_scroll
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
-        auto_scroll = True
-        root.after(0, scroll_to_current)
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
-            def do_update(p=percent):
-                pbars[row].config(value=p)
-                place_widget(row)
-            root.after(0, do_update)
+            event_q.put(("progress", row, percent))
 
         try:
             compress_gui(path, out, mode, update)
-            def finish():
-                pbars[row].config(value=100)
-                tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
-                info[row]["done"] = True
-                place_widget(row)
-                scroll_to_current()
-            root.after(0, finish)
+            event_q.put(("done", row, out.stat().st_size / (1024 * 1024)))
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
-            def mark_error():
-                tree.set(row, "result", "error")
-                info[row]["done"] = True
-                place_widget(row)
-                scroll_to_current()
-            root.after(0, mark_error)
-        finally:
-            done += 1
-            root.after(0, update_overall)
-            root.after(0, scroll_to_current)
+            event_q.put(("error", row, str(e)))
 
-    def initial_layout():
-        place_all()
-        scroll_to_current()
+    def table_double_click(item):
+        row = item.row()
+        if row in info:
+            open_in_folder(info[row]["path"])
 
-    root.after(100, initial_layout)
-    root.mainloop()
+    table.itemDoubleClicked.connect(table_double_click)
+
+    def drop_paths(paths):
+        add_files(paths)
+
+    table.files_dropped.connect(drop_paths)
+
+    win.resize(1000, 400)
+    win.show()
+    sys.exit(app.exec_())
 
 
 def main():

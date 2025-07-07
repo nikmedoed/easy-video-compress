@@ -1,2 +1,2 @@
 rich
-tkinterdnd2
+PyQt5
