@@ -18,6 +18,7 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
 * **Multithreaded Execution**: Utilizes `ThreadPoolExecutor` for parallel processing (up to 4 workers by default).
 * **Rich Progress Display**: Shows a real-time progress bar with estimated time remaining (powered by the [Rich](https://github.com/Textualize/rich) library).
 * **Windows Integration**: A `.bat` wrapper and a PowerShell installer script to add a **Compress video (FFmpeg)** entry to the Windows context menu.
+* **Drag-and-Drop GUI**: Launch the script without arguments (or with `--gui`) to open a simple interface for queueing many videos via drag-and-drop or a file dialog, with per-file progress.
 
 ## Supported Video Formats
 
@@ -83,6 +84,10 @@ python compress.py 5 video1.mp4 /path/to/videos_folder
 
 The script will calculate the required video bitrate and downscale resolution as needed to meet the size target.
 
+### 3. GUI Mode
+
+Launch the script without any arguments (or pass `--gui`) to open a simple drag-and-drop interface. Drop multiple videos onto the window or use the **Add Videos** button. Conversion starts automatically and the queue shows per-file progress. The 5 MB mode toggle controls whether each file is compressed for size or by CRF.
+
 ## Windows Context Menu & PowerShell Integration
 
 To add a **Compress video (FFmpeg)** entry to the right-click menu:
@@ -104,4 +109,4 @@ This installer will also automatically install FFmpeg via `winget` if it is not 
 * **`compress.py`**: Core Python script implementing compression logic.
 * **`compress.bat`**: Windows batch wrapper that calls `compress.py`.
 * **`win_install.ps1`**: PowerShell script to install context-menu hooks and ensure FFmpeg is installed.
-* **`requirements.txt`**: Lists Python dependencies (`rich`).
+* **`requirements.txt`**: Lists Python dependencies (`rich`, `tkinterdnd2`).
