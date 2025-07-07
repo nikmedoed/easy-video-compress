@@ -228,7 +228,7 @@ def run_gui():
         pass
 
     style = ttk.Style(root)
-    style.configure("Alt.TButton", padding=0)
+    style.configure("Alt.TButton", padding=(2, 0), anchor="center")
 
     top = ttk.Frame(root)
     top.pack(fill="x")
@@ -287,6 +287,14 @@ def run_gui():
     alts: dict[str, ttk.Button] = {}
     info: dict[str, dict[str, object]] = {}
 
+    def scroll_to_current():
+        items = tree.get_children()
+        for it in items:
+            if pbars.get(it) and not info.get(it, {}).get("done") and float(pbars[it]["value"]) < 100:
+                idx = items.index(it)
+                tree.yview_moveto(idx / len(items))
+                break
+
     def scroll_to(item):
         children = tree.get_children()
         if not children:
@@ -325,6 +333,7 @@ def run_gui():
     def place_all():
         for it in pbars:
             place_widget(it)
+        scroll_to_current()
 
     def add_files(paths, mode_override=None):
         nonlocal total
@@ -363,8 +372,8 @@ def run_gui():
             )
             alts[row] = btn_alt
             place_widget(row)
-            info[row] = {"path": path, "duration": dur, "mode": mode}
-            scroll_to(row)
+            info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
+            scroll_to_current()
             total += 1
             update_overall()
             executor.submit(process_row, row)
@@ -393,14 +402,14 @@ def run_gui():
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
-        root.after(0, lambda: scroll_to(row))
+        root.after(0, scroll_to_current)
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
             def do_update(p=percent):
                 pbars[row].config(value=p)
                 place_widget(row)
-                scroll_to(row)
+                scroll_to_current()
             root.after(0, do_update)
 
         try:
@@ -408,17 +417,22 @@ def run_gui():
             def finish():
                 pbars[row].config(value=100)
                 tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
+                info[row]["done"] = True
                 place_widget(row)
+                scroll_to_current()
             root.after(0, finish)
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
             def mark_error():
                 tree.set(row, "result", "error")
+                info[row]["done"] = True
                 place_widget(row)
+                scroll_to_current()
             root.after(0, mark_error)
         finally:
             done += 1
             root.after(0, update_overall)
+            root.after(0, scroll_to_current)
 
     root.after(100, place_all)
     root.mainloop()
