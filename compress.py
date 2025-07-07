@@ -247,7 +247,7 @@ def run_gui():
         "duration",
         "size",
         "result",
-        "mode",
+        "five_mb",
         "alt",
         "progress",
     )
@@ -259,12 +259,13 @@ def run_gui():
         "duration": 80,
         "size": 80,
         "result": 80,
-        "mode": 60,
+        "five_mb": 60,
         "alt": 50,
         "progress": 150,
     }
     for c in columns:
-        tree.heading(c, text=c.title())
+        heading = "5MB?" if c == "five_mb" else c.title()
+        tree.heading(c, text=heading)
         tree.column(c, width=widths[c], anchor="center")
     tree.column("file", anchor="w")
 
@@ -289,15 +290,29 @@ def run_gui():
     alts: dict[str, ttk.Button] = {}
     info: dict[str, dict[str, object]] = {}
 
-    def scroll_to_current():
+    last_idx = -1
+    scroll_scheduled = False
+
+    def _do_scroll():
+        nonlocal scroll_scheduled, last_idx
+        scroll_scheduled = False
         if not auto_scroll:
             return
         items = tree.get_children()
         for it in items:
             if pbars.get(it) and not info.get(it, {}).get("done") and float(pbars[it]["value"]) < 100:
                 idx = items.index(it)
-                tree.yview_moveto(idx / len(items))
+                if idx != last_idx:
+                    tree.yview_moveto(idx / len(items))
+                    last_idx = idx
                 break
+
+    def scroll_to_current():
+        nonlocal scroll_scheduled
+        if scroll_scheduled:
+            return
+        scroll_scheduled = True
+        root.after(100, _do_scroll)
 
     def scroll_to(item):
         children = tree.get_children()
@@ -357,7 +372,7 @@ def run_gui():
                     format_duration(dur),
                     f"{size_mb:.1f} MB",
                     "",
-                    "5 MB" if mode == "size" else "",
+                    "✔" if mode == "size" else "",
                     "",
                     "",
                 ),
