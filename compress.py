@@ -234,20 +234,6 @@ class DropTable(QtWidgets.QTableWidget):
         event.acceptProposedAction()
 
 
-class ProgressDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self, progress, *args):
-        super().__init__(*args)
-        self.progress = progress
-
-    def paint(self, painter, option, index):
-        pr = self.progress.get(index.row(), 0)
-        if pr:
-            bar_rect = QtCore.QRect(option.rect)
-            bar_rect.setWidth(int(option.rect.width() * pr / 100))
-            color = option.palette.highlight().color().lighter(130)
-            painter.fillRect(bar_rect, color)
-        super().paint(painter, option, index)
-
 
 def run_gui():
     app = QtWidgets.QApplication(sys.argv)
@@ -292,8 +278,11 @@ def run_gui():
     table = DropTable(len(columns))
     table.setHorizontalHeaderLabels(["File", "Codec", "Bitrate", "Duration", "Size", "Result", "5MB?", "Alt"])
     header = table.horizontalHeader()
-    header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+    for i in range(len(columns)):
+        mode = QtWidgets.QHeaderView.ResizeToContents
+        header.setSectionResizeMode(i, mode)
     header.setStretchLastSection(True)
+    table.setColumnWidth(columns.index("alt"), 60)
     table.verticalHeader().setVisible(False)
     table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
     table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -306,13 +295,11 @@ def run_gui():
     def on_scroll(*_):
         nonlocal auto_scroll
         auto_scroll = False
+
     scroll_bar.valueChanged.connect(on_scroll)
 
-    info = {}
-    progress_map = {}
-    delegate = ProgressDelegate(progress_map, table)
-    table.setItemDelegate(delegate)
-    alt_buttons = {}
+    jobs = []
+    row_to_job = {}
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
     total = 0
     done = 0
@@ -329,34 +316,33 @@ def run_gui():
     def scroll_to_current():
         if not auto_scroll:
             return
-        for row in range(table.rowCount()):
-            inf = info.get(row)
-            if inf and not inf.get("done") and inf.get("progress", 0) < 100:
-                table.scrollToItem(table.item(row, 0), QtWidgets.QAbstractItemView.PositionAtTop)
+        for job in jobs:
+            if not job["done"] and job["progress"] < 100:
+                table.scrollToItem(table.item(job["row_info"], 0), QtWidgets.QAbstractItemView.PositionAtTop)
                 break
 
     def process_events():
         nonlocal done
         while True:
             try:
-                evt, row, data = event_q.get_nowait()
+                evt, job, data = event_q.get_nowait()
             except queue.Empty:
                 break
             if evt == "progress":
-                progress_map[row] = data
-                info[row]["progress"] = data
+                job["progress"] = data
+                job["progress_widget"].setValue(int(data))
             elif evt == "done":
-                progress_map[row] = 100
-                table.item(row, 5).setText(f"{data:.1f} MB")
-                info[row]["done"] = True
-                info[row]["progress"] = 100
+                job["progress"] = 100
+                job["progress_widget"].setValue(100)
+                table.item(job["row_info"], 5).setText(f"{data:.1f} MB")
+                job["done"] = True
                 done += 1
                 update_overall()
             elif evt == "error":
-                progress_map[row] = 100
-                table.item(row, 5).setText("error")
-                info[row]["done"] = True
-                info[row]["progress"] = 100
+                job["progress"] = 100
+                job["progress_widget"].setValue(100)
+                table.item(job["row_info"], 5).setText("error")
+                job["done"] = True
                 done += 1
                 update_overall()
         table.viewport().update()
@@ -398,21 +384,40 @@ def run_gui():
             item_mode.setTextAlignment(QtCore.Qt.AlignCenter)
             table.setItem(row, 6, item_mode)
 
-            btn_alt = QtWidgets.QPushButton("⇆")
-            btn_alt.setMaximumWidth(40)
-            btn_alt.setStyleSheet("padding:0px;margin:0px;border:none;")
-            btn_alt.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+            btn_alt = QtWidgets.QPushButton("Alt")
+            btn_alt.setFixedWidth(50)
+            btn_alt.setStyleSheet("padding:2px;margin:0px;")
+            btn_alt.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
             btn_alt.clicked.connect(lambda _, p=str(path), m="crf" if mode == "size" else "size": add_files([p], m))
             table.setCellWidget(row, 7, btn_alt)
 
-            progress_map[row] = 0
-            alt_buttons[row] = btn_alt
-            info[row] = {"path": path, "duration": dur, "mode": mode, "done": False, "progress": 0}
+            prog_row = table.rowCount()
+            table.insertRow(prog_row)
+            prog = QtWidgets.QProgressBar()
+            prog.setTextVisible(False)
+            table.setCellWidget(prog_row, 0, prog)
+            table.setSpan(prog_row, 0, 1, len(columns))
+            table.setRowHeight(prog_row, 16)
+
+            job = {
+                "path": path,
+                "duration": dur,
+                "mode": mode,
+                "done": False,
+                "progress": 0,
+                "row_info": row,
+                "row_prog": prog_row,
+                "progress_widget": prog,
+                "alt_button": btn_alt,
+            }
+            jobs.append(job)
+            row_to_job[row] = job
+            row_to_job[prog_row] = job
             auto_scroll = True
             scroll_to_current()
             total += 1
             update_overall()
-            executor.submit(process_row, row)
+            executor.submit(process_row, job)
 
     def select_files():
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -429,26 +434,27 @@ def run_gui():
 
     add_btn.clicked.connect(select_files)
 
-    def process_row(row):
-        path = info[row]["path"]
-        mode = info[row]["mode"]
+    def process_row(job):
+        path = job["path"]
+        mode = job["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
 
         def update(sec):
-            percent = min(100, sec * 100 / info[row]["duration"])
-            event_q.put(("progress", row, percent))
+            percent = min(100, sec * 100 / job["duration"])
+            event_q.put(("progress", job, percent))
 
         try:
             compress_gui(path, out, mode, update)
-            event_q.put(("done", row, out.stat().st_size / (1024 * 1024)))
+            event_q.put(("done", job, out.stat().st_size / (1024 * 1024)))
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
-            event_q.put(("error", row, str(e)))
+            event_q.put(("error", job, str(e)))
 
     def table_double_click(item):
         row = item.row()
-        if row in info:
-            open_in_folder(info[row]["path"])
+        job = row_to_job.get(row)
+        if job:
+            open_in_folder(job["path"])
 
     table.itemDoubleClicked.connect(table_double_click)
 
