@@ -218,14 +218,20 @@ class DropTable(QtWidgets.QTableWidget):
     def __init__(self, columns: int, parent=None):
         super().__init__(0, columns, parent)
         self.setAcceptDrops(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DropOnly)
 
     def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
     def dropEvent(self, event):
         paths = [u.toLocalFile() for u in event.mimeData().urls()]
         self.files_dropped.emit(paths)
+        event.acceptProposedAction()
 
 
 def run_gui():
@@ -236,7 +242,9 @@ def run_gui():
         icon_path = Path(__file__).with_name("icon/icon.png")
         if sys.platform.startswith("win"):
             icon_path = Path(__file__).with_name("icon/icon.ico")
-        win.setWindowIcon(QtGui.QIcon(str(icon_path)))
+        icon = QtGui.QIcon(str(icon_path))
+        win.setWindowIcon(icon)
+        app.setWindowIcon(icon)
     except Exception:
         pass
 
@@ -269,16 +277,9 @@ def run_gui():
     ]
     table = DropTable(len(columns))
     table.setHorizontalHeaderLabels(["File", "Codec", "Bitrate", "Duration", "Size", "Result", "5MB?", "Alt", "Progress"])
-    table.horizontalHeader().setStretchLastSection(False)
-    table.setColumnWidth(0, 200)
-    table.setColumnWidth(1, 70)
-    table.setColumnWidth(2, 80)
-    table.setColumnWidth(3, 80)
-    table.setColumnWidth(4, 80)
-    table.setColumnWidth(5, 80)
-    table.setColumnWidth(6, 60)
-    table.setColumnWidth(7, 50)
-    table.setColumnWidth(8, 150)
+    header = table.horizontalHeader()
+    header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+    header.setStretchLastSection(True)
     table.verticalHeader().setVisible(False)
     table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
     table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -381,8 +382,17 @@ def run_gui():
             executor.submit(process_row, row)
 
     def select_files():
-        files, _ = QtWidgets.QFileDialog.getOpenFileNames(win, "Select Videos", "", "Videos (*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm)")
-        add_files(files)
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            win,
+            "Select Videos",
+            "",
+            "Video Files (*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm)",
+        )
+        if files:
+            try:
+                add_files(files)
+            except Exception as exc:
+                console.log(f"[red]Failed adding files: {exc}[/]")
 
     add_btn.clicked.connect(select_files)
 
