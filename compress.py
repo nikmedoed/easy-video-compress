@@ -228,7 +228,18 @@ def run_gui():
     btn = ttk.Button(top, text="Add Videos")
     btn.pack(side="left", padx=5, pady=5)
 
-    columns = ("file", "duration", "codec", "bitrate", "size", "progress")
+    columns = (
+        "file",
+        "duration",
+        "codec",
+        "bitrate",
+        "size",
+        "target",
+        "result",
+        "mode",
+        "alt",
+        "progress",
+    )
     tree = ttk.Treeview(root, columns=columns, show="headings")
     widths = {
         "file": 200,
@@ -236,6 +247,10 @@ def run_gui():
         "codec": 70,
         "bitrate": 80,
         "size": 80,
+        "target": 80,
+        "result": 80,
+        "mode": 60,
+        "alt": 50,
         "progress": 150,
     }
     for c in columns:
@@ -253,18 +268,19 @@ def run_gui():
     vsb.config(command=yview)
     tree.configure(yscrollcommand=vsb.set)
     tree.pack(fill="both", expand=True, padx=5, pady=5)
+    tree.bind("<Configure>", lambda e: place_all())
+    root.bind("<Configure>", lambda e: place_all())
 
     pbars: dict[str, ttk.Progressbar] = {}
+    alts: dict[str, ttk.Button] = {}
     info: dict[str, dict[str, object]] = {}
     total = 0
     done = 0
 
-    overall_frame = ttk.Frame(root)
-    overall_bar = ttk.Progressbar(overall_frame, length=200)
+    overall_bar = ttk.Progressbar(top, length=200)
     overall_bar.pack(side="left", fill="x", expand=True, padx=5)
-    overall_label = ttk.Label(overall_frame, text="0/0")
+    overall_label = ttk.Label(top, text="0/0")
     overall_label.pack(side="left", padx=5)
-    overall_frame.pack(fill="x", pady=5)
 
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
@@ -276,18 +292,22 @@ def run_gui():
             overall_bar["value"] = 0
             overall_label.config(text="0/0")
 
-    def place_progress(item):
+    def place_widget(item):
         root.update_idletasks()
-        bbox = tree.bbox(item, "progress")
-        if bbox:
-            x, y, w, h = bbox
+        pbbox = tree.bbox(item, "progress")
+        if pbbox:
+            x, y, w, h = pbbox
             pbars[item].place(x=x, y=y, width=w, height=h)
+        abbox = tree.bbox(item, "alt")
+        if abbox:
+            x, y, w, h = abbox
+            alts[item].place(x=x, y=y, width=w, height=h)
 
     def place_all():
         for it in pbars:
-            place_progress(it)
+            place_widget(it)
 
-    def add_files(paths):
+    def add_files(paths, mode_override=None):
         nonlocal total
         for p in paths:
             path = Path(p)
@@ -295,11 +315,35 @@ def run_gui():
                 continue
             dur, codec, br = get_video_info(path)
             size_mb = path.stat().st_size / (1024 * 1024)
-            row = tree.insert("", "end", values=(path.name, format_duration(dur), codec, f"{br//1000}k", f"{size_mb:.1f} MB", ""))
+            mode = mode_override or ("size" if size_var.get() else "crf")
+            target = f"{TARGET_MB:.1f} MB" if mode == "size" else ""
+            row = tree.insert(
+                "",
+                "end",
+                values=(
+                    path.name,
+                    format_duration(dur),
+                    codec,
+                    f"{br//1000}k",
+                    f"{size_mb:.1f} MB",
+                    target,
+                    "",
+                    "5 MB" if mode == "size" else "",
+                    "",
+                    "",
+                ),
+            )
             pb = ttk.Progressbar(tree, maximum=100)
             pbars[row] = pb
-            place_progress(row)
-            info[row] = {"path": path, "duration": dur}
+            btn_alt = ttk.Button(
+                tree,
+                text="Alt",
+                width=4,
+                command=lambda p=str(path), m="crf" if mode == "size" else "size": add_files([p], m),
+            )
+            alts[row] = btn_alt
+            place_widget(row)
+            info[row] = {"path": path, "duration": dur, "mode": mode}
             total += 1
             update_overall()
             executor.submit(process_row, row)
@@ -326,18 +370,29 @@ def run_gui():
     def process_row(row):
         nonlocal done
         path = info[row]["path"]
-        mode = "size" if size_var.get() else "crf"
+        mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
-            root.after(0, lambda p=percent: pbars[row].config(value=p))
+            def do_update(p=percent):
+                pbars[row].config(value=p)
+                place_widget(row)
+            root.after(0, do_update)
 
         try:
             compress_gui(path, out, mode, update)
-            root.after(0, lambda: pbars[row].config(value=100))
+            def finish():
+                pbars[row].config(value=100)
+                tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
+                place_widget(row)
+            root.after(0, finish)
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
+            def mark_error():
+                tree.set(row, "result", "error")
+                place_widget(row)
+            root.after(0, mark_error)
         finally:
             done += 1
             root.after(0, update_overall)
