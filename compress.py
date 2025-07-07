@@ -242,11 +242,10 @@ def run_gui():
 
     columns = (
         "file",
-        "duration",
         "codec",
         "bitrate",
+        "duration",
         "size",
-        "target",
         "result",
         "mode",
         "alt",
@@ -255,11 +254,10 @@ def run_gui():
     tree = ttk.Treeview(root, columns=columns, show="headings")
     widths = {
         "file": 200,
-        "duration": 80,
         "codec": 70,
         "bitrate": 80,
+        "duration": 80,
         "size": 80,
-        "target": 80,
         "result": 80,
         "mode": 60,
         "alt": 50,
@@ -273,8 +271,12 @@ def run_gui():
     vsb = ttk.Scrollbar(root, orient="vertical")
     vsb.pack(side="right", fill="y")
 
+    auto_scroll = True
+
     def yview(*args):
+        nonlocal auto_scroll
         tree.yview(*args)
+        auto_scroll = False
         place_all()
 
     vsb.config(command=yview)
@@ -288,6 +290,8 @@ def run_gui():
     info: dict[str, dict[str, object]] = {}
 
     def scroll_to_current():
+        if not auto_scroll:
+            return
         items = tree.get_children()
         for it in items:
             if pbars.get(it) and not info.get(it, {}).get("done") and float(pbars[it]["value"]) < 100:
@@ -333,10 +337,9 @@ def run_gui():
     def place_all():
         for it in pbars:
             place_widget(it)
-        scroll_to_current()
 
     def add_files(paths, mode_override=None):
-        nonlocal total
+        nonlocal total, auto_scroll
         for p in paths:
             path = Path(p)
             if path.suffix.lower() not in VIDEO_EXTS:
@@ -344,17 +347,15 @@ def run_gui():
             dur, codec, br = get_video_info(path)
             size_mb = path.stat().st_size / (1024 * 1024)
             mode = mode_override or ("size" if size_var.get() else "crf")
-            target = f"{TARGET_MB:.1f} MB" if mode == "size" else ""
             row = tree.insert(
                 "",
                 "end",
                 values=(
                     path.name,
-                    format_duration(dur),
                     codec,
                     f"{br//1000}k",
+                    format_duration(dur),
                     f"{size_mb:.1f} MB",
-                    target,
                     "",
                     "5 MB" if mode == "size" else "",
                     "",
@@ -373,6 +374,7 @@ def run_gui():
             alts[row] = btn_alt
             place_widget(row)
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
+            auto_scroll = True
             scroll_to_current()
             total += 1
             update_overall()
@@ -398,10 +400,11 @@ def run_gui():
     tree.bind("<Double-1>", on_double)
 
     def process_row(row):
-        nonlocal done
+        nonlocal done, auto_scroll
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
+        auto_scroll = True
         root.after(0, scroll_to_current)
 
         def update(sec):
@@ -409,7 +412,6 @@ def run_gui():
             def do_update(p=percent):
                 pbars[row].config(value=p)
                 place_widget(row)
-                scroll_to_current()
             root.after(0, do_update)
 
         try:
@@ -434,7 +436,11 @@ def run_gui():
             root.after(0, update_overall)
             root.after(0, scroll_to_current)
 
-    root.after(100, place_all)
+    def initial_layout():
+        place_all()
+        scroll_to_current()
+
+    root.after(100, initial_layout)
     root.mainloop()
 
 
