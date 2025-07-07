@@ -9,7 +9,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
-from tkinter import Tk, ttk, filedialog, BooleanVar
+from tkinter import ttk, filedialog, BooleanVar
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
@@ -218,31 +218,91 @@ def run_gui():
     root = TkinterDnD.Tk()
     root.title("Video Compress")
 
+    top = ttk.Frame(root)
+    top.pack(fill="x")
+
     size_var = BooleanVar(value=False)
-    chk = ttk.Checkbutton(root, text="5MB mode", variable=size_var)
-    chk.pack(pady=5)
+    chk = ttk.Checkbutton(top, text="5MB mode", variable=size_var)
+    chk.pack(side="left", padx=5, pady=5)
 
-    btn = ttk.Button(root, text="Add Videos")
-    btn.pack(pady=5)
+    btn = ttk.Button(top, text="Add Videos")
+    btn.pack(side="left", padx=5, pady=5)
 
-    columns = ("file", "duration", "codec", "bitrate", "progress")
+    columns = ("file", "duration", "codec", "bitrate", "size", "progress")
     tree = ttk.Treeview(root, columns=columns, show="headings")
+    widths = {
+        "file": 200,
+        "duration": 80,
+        "codec": 70,
+        "bitrate": 80,
+        "size": 80,
+        "progress": 150,
+    }
     for c in columns:
         tree.heading(c, text=c.title())
+        tree.column(c, width=widths[c], anchor="center")
+    tree.column("file", anchor="w")
+
+    vsb = ttk.Scrollbar(root, orient="vertical")
+    vsb.pack(side="right", fill="y")
+
+    def yview(*args):
+        tree.yview(*args)
+        place_all()
+
+    vsb.config(command=yview)
+    tree.configure(yscrollcommand=vsb.set)
     tree.pack(fill="both", expand=True, padx=5, pady=5)
 
-    q: queue.Queue[str] = queue.Queue()
+    pbars: dict[str, ttk.Progressbar] = {}
     info: dict[str, dict[str, object]] = {}
+    total = 0
+    done = 0
+
+    overall_frame = ttk.Frame(root)
+    overall_bar = ttk.Progressbar(overall_frame, length=200)
+    overall_bar.pack(side="left", fill="x", expand=True, padx=5)
+    overall_label = ttk.Label(overall_frame, text="0/0")
+    overall_label.pack(side="left", padx=5)
+    overall_frame.pack(fill="x", pady=5)
+
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+
+    def update_overall():
+        if total:
+            overall_bar["value"] = done * 100 / total
+            overall_label.config(text=f"{done}/{total}")
+        else:
+            overall_bar["value"] = 0
+            overall_label.config(text="0/0")
+
+    def place_progress(item):
+        root.update_idletasks()
+        bbox = tree.bbox(item, "progress")
+        if bbox:
+            x, y, w, h = bbox
+            pbars[item].place(x=x, y=y, width=w, height=h)
+
+    def place_all():
+        for it in pbars:
+            place_progress(it)
 
     def add_files(paths):
+        nonlocal total
         for p in paths:
             path = Path(p)
             if path.suffix.lower() not in VIDEO_EXTS:
                 continue
             dur, codec, br = get_video_info(path)
-            row = tree.insert("", "end", values=(path.name, format_duration(dur), codec, f"{br//1000}k", "Queued"))
+            size_mb = path.stat().st_size / (1024 * 1024)
+            row = tree.insert("", "end", values=(path.name, format_duration(dur), codec, f"{br//1000}k", f"{size_mb:.1f} MB", ""))
+            pb = ttk.Progressbar(tree, maximum=100)
+            pbars[row] = pb
+            place_progress(row)
             info[row] = {"path": path, "duration": dur}
-            q.put(row)
+            total += 1
+            update_overall()
+            executor.submit(process_row, row)
 
     def select_files():
         files = filedialog.askopenfilenames(filetypes=[("Videos", "*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm")])
@@ -263,27 +323,26 @@ def run_gui():
 
     tree.bind("<Double-1>", on_double)
 
-    def worker():
-        while True:
-            row = q.get()
-            path = info[row]["path"]
-            mode = "size" if size_var.get() else "crf"
-            out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
+    def process_row(row):
+        nonlocal done
+        path = info[row]["path"]
+        mode = "size" if size_var.get() else "crf"
+        out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
 
-            def update(sec):
-                percent = min(100, sec * 100 / info[row]["duration"])
-                tree.set(row, "progress", f"{percent:.0f}%")
+        def update(sec):
+            percent = min(100, sec * 100 / info[row]["duration"])
+            root.after(0, lambda p=percent: pbars[row].config(value=p))
 
-            try:
-                compress_gui(path, out, mode, update)
-                tree.set(row, "progress", "Done")
-            except Exception as e:
-                tree.set(row, "progress", "Error")
-                console.log(f"[red]Error {path.name}: {e}[/]")
-            q.task_done()
+        try:
+            compress_gui(path, out, mode, update)
+            root.after(0, lambda: pbars[row].config(value=100))
+        except Exception as e:
+            console.log(f"[red]Error {path.name}: {e}[/]")
+        finally:
+            done += 1
+            root.after(0, update_overall)
 
-    threading.Thread(target=worker, daemon=True).start()
-
+    root.after(100, place_all)
     root.mainloop()
 
 
