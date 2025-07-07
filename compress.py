@@ -9,6 +9,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+import tkinter as tk
 from tkinter import ttk, filedialog, BooleanVar
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
@@ -217,6 +218,17 @@ def open_in_folder(path: Path):
 def run_gui():
     root = TkinterDnD.Tk()
     root.title("Video Compress")
+    try:
+        if sys.platform.startswith("win"):
+            root.iconbitmap(Path(__file__).with_name("icon/icon.ico"))
+        else:
+            img = tk.PhotoImage(file=Path(__file__).with_name("icon/icon.png"))
+            root.iconphoto(True, img)
+    except Exception:
+        pass
+
+    style = ttk.Style(root)
+    style.configure("Alt.TButton", padding=0)
 
     top = ttk.Frame(root)
     top.pack(fill="x")
@@ -274,6 +286,13 @@ def run_gui():
     pbars: dict[str, ttk.Progressbar] = {}
     alts: dict[str, ttk.Button] = {}
     info: dict[str, dict[str, object]] = {}
+
+    def scroll_to(item):
+        children = tree.get_children()
+        if not children:
+            return
+        idx = children.index(item)
+        tree.yview_moveto(idx / len(children))
     total = 0
     done = 0
 
@@ -337,13 +356,15 @@ def run_gui():
             pbars[row] = pb
             btn_alt = ttk.Button(
                 tree,
-                text="Alt",
+                text="⇆",
                 width=4,
+                style="Alt.TButton",
                 command=lambda p=str(path), m="crf" if mode == "size" else "size": add_files([p], m),
             )
             alts[row] = btn_alt
             place_widget(row)
             info[row] = {"path": path, "duration": dur, "mode": mode}
+            scroll_to(row)
             total += 1
             update_overall()
             executor.submit(process_row, row)
@@ -372,12 +393,14 @@ def run_gui():
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
+        root.after(0, lambda: scroll_to(row))
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
             def do_update(p=percent):
                 pbars[row].config(value=p)
                 place_widget(row)
+                scroll_to(row)
             root.after(0, do_update)
 
         try:
