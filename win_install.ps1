@@ -101,5 +101,22 @@ function compress {
     Write-Host "ℹ️ 'compress' function already exists in your PowerShell profile."
 }
 
+# Create Start Menu shortcut for GUI
+$startMenu   = [Environment]::GetFolderPath('Programs')
+$lnkPath     = Join-Path $startMenu 'Video Compress.lnk'
+if (Test-Path $lnkPath) {
+    Remove-Item $lnkPath -Force
+}
+$shell       = New-Object -ComObject WScript.Shell
+$shortcut    = $shell.CreateShortcut($lnkPath)
+$shortcut.TargetPath = $bat
+$shortcut.WorkingDirectory = $root
+if (Test-Path $icon) {
+    $shortcut.IconLocation = $icon
+}
+$shortcut.Description = 'Launch Video Compress GUI'
+$shortcut.Save()
+Write-Host "✅ Start Menu shortcut created: $lnkPath"
+
 Write-Host "`n🎉 Installation complete! Restart Explorer or open a new window and check context menu:"`
 Write-Host "    Right-click → $label (on videos/folders)"
