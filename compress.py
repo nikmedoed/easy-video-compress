@@ -205,10 +205,17 @@ def format_duration(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-def progress_bar_text(percent: float, width: int = 10) -> str:
-    done = int(percent / 100 * width)
-    bar = "█" * done + " " * (width - done)
-    return f"[{bar}] {percent:3.0f}%"
+def progress_bar_text(percent: float, width: int = 16) -> str:
+    percent = max(0.0, min(100.0, percent))
+    text = f" {percent:3.0f}% "
+    inner = width - 2
+    bar = [" "] * inner
+    fill_len = int(inner * percent / 100)
+    for i in range(fill_len):
+        bar[i] = "█"
+    start = (inner - len(text)) // 2
+    bar[start:start + len(text)] = list(text)
+    return "[" + "".join(bar) + "]"
 
 
 def open_in_folder(path: Path):
@@ -257,6 +264,7 @@ def run_gui():
         "progress",
     )
     tree = ttk.Treeview(root, columns=columns, show="headings")
+    tree.tag_configure("waiting", background="white")
     tree.tag_configure("in_progress", background="#ffe5b4")
     tree.tag_configure("completed", background="#d4f7d4")
     tree.tag_configure("error", background="#f7d4d4")
@@ -269,7 +277,7 @@ def run_gui():
         "result": 80,
         "five_mb": 60,
         "alt": 40,
-        "progress": 120,
+        "progress": 150,
     }
     for c in columns:
         heading = "5MB?" if c == "five_mb" else c.title()
@@ -370,7 +378,7 @@ def run_gui():
                     progress_bar_text(0),
                 ),
             )
-            tree.item(row, tags=("in_progress",))
+            tree.item(row, tags=("waiting",))
             progress_vals[row] = 0.0
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
             auto_scroll = True
