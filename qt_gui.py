@@ -1,19 +1,27 @@
 import os
+import sys
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,
-    QCheckBox, QFileDialog, QTableWidget, QTableWidgetItem, QProgressBar,
-    QHeaderView
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QCheckBox,
+    QFileDialog,
+    QTableWidget,
+    QTableWidgetItem,
+    QProgressBar,
+    QHeaderView,
 )
 
 from compress import get_duration, probe_video, compress as run_compress, find_all_videos
 
-MAX_WORKERS = 4
 
 @dataclass
 class Task:
@@ -62,7 +70,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Video Compressor")
         self.resize(800, 400)
         self.tasks: list[Task] = []
-        self.executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+        self.workers: list[QObject] = []
+        self.threads: list[QThread] = []
         self.setup_ui()
 
     def setup_ui(self):
@@ -70,12 +79,14 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         layout = QVBoxLayout(central)
 
+        controls = QHBoxLayout()
         self.size_check = QCheckBox("Target 5 MB")
-        layout.addWidget(self.size_check)
-
+        controls.addWidget(self.size_check)
         self.add_btn = QPushButton("Add Videos")
         self.add_btn.clicked.connect(self.open_files)
-        layout.addWidget(self.add_btn)
+        controls.addWidget(self.add_btn)
+        controls.addStretch(1)
+        layout.addLayout(controls)
 
         self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels([
@@ -150,8 +161,17 @@ class MainWindow(QMainWindow):
         worker.finished.connect(self.task_finished)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self.cleanup_thread(thread, worker))
         thread.start()
+        self.workers.append(worker)
+        self.threads.append(thread)
+
+    def cleanup_thread(self, thread: QThread, worker: QObject):
+        if thread in self.threads:
+            self.threads.remove(thread)
+        if worker in self.workers:
+            self.workers.remove(worker)
+        thread.deleteLater()
 
     def update_progress(self, row: int, value: float):
         task = self.tasks[row]
