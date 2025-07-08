@@ -249,8 +249,8 @@ def run_gui():
 
     header = ttk.Frame(root)
     header.pack(fill="x", padx=5)
-    columns = ["File", "Codec", "BR", "Dur", "Size", "Result", "5MB?", "Alt"]
-    weights = [4, 1, 1, 1, 1, 1, 1, 0]
+    columns = ["File", "Codec", "BR", "Dur", "Size", "Result", "5MB?", "Alt", "Progress"]
+    weights = [4, 1, 1, 1, 1, 1, 1, 0, 2]
     for i, text in enumerate(columns):
         header.columnconfigure(i, weight=weights[i])
         ttk.Label(header, text=text, font=("Segoe UI", 9, "bold")).grid(
@@ -293,6 +293,11 @@ def run_gui():
     scroll = Scrollable(root)
     scroll.pack(fill="both", expand=True, padx=5, pady=5)
 
+    table = ttk.Frame(scroll.inner)
+    table.pack(fill="x")
+    for i, w in enumerate(weights):
+        table.grid_columnconfigure(i, weight=w)
+
     rows: list[ttk.Frame] = []
     info: dict[ttk.Frame, dict[str, object]] = {}
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
@@ -319,30 +324,30 @@ def run_gui():
     def create_row(path: Path, mode: str):
         dur, codec, br = get_video_info(path)
         size_mb = path.stat().st_size / (1024 * 1024)
-        frame = ttk.Frame(scroll.inner, padding=5)
-        weights = [4, 1, 1, 1, 1, 1, 1, 0]
+        row = ttk.Frame(table, padding=2)
+        idx = len(rows) + 1
         for i, w in enumerate(weights):
-            frame.grid_columnconfigure(i, weight=w)
-        ttk.Label(frame, text=path.name, anchor="w").grid(row=0, column=0, sticky="nsew")
-        ttk.Label(frame, text=codec).grid(row=0, column=1, sticky="nsew")
-        ttk.Label(frame, text=f"{br//1000}k").grid(row=0, column=2, sticky="nsew")
-        ttk.Label(frame, text=format_duration(dur)).grid(row=0, column=3, sticky="nsew")
-        ttk.Label(frame, text=f"{size_mb:.1f} MB").grid(row=0, column=4, sticky="nsew")
+            row.grid_columnconfigure(i, weight=w)
+        ttk.Label(row, text=path.name, anchor="w").grid(row=0, column=0, sticky="nsew")
+        ttk.Label(row, text=codec).grid(row=0, column=1, sticky="nsew")
+        ttk.Label(row, text=f"{br//1000}k").grid(row=0, column=2, sticky="nsew")
+        ttk.Label(row, text=format_duration(dur)).grid(row=0, column=3, sticky="nsew")
+        ttk.Label(row, text=f"{size_mb:.1f} MB").grid(row=0, column=4, sticky="nsew")
         result_var = tk.StringVar(value="")
-        ttk.Label(frame, textvariable=result_var).grid(row=0, column=5, sticky="nsew")
-        ttk.Label(frame, text="✔" if mode == "size" else "").grid(row=0, column=6, sticky="nsew")
+        ttk.Label(row, textvariable=result_var).grid(row=0, column=5, sticky="nsew")
+        ttk.Label(row, text="✔" if mode == "size" else "").grid(row=0, column=6, sticky="nsew")
         alt_btn = ttk.Button(
-            frame,
+            row,
             text="⇆",
             width=4,
             style="Alt.TButton",
             command=lambda p=str(path), m="crf" if mode == "size" else "size": add_files([p], m),
         )
         alt_btn.grid(row=0, column=7, sticky="nsew")
-        pb = ttk.Progressbar(frame, maximum=100)
-        pb.grid(row=1, column=0, columnspan=8, sticky="ew", pady=(2, 0))
-        frame.pack(fill="x", pady=2)
-        info[frame] = {
+        pb = ttk.Progressbar(row, maximum=100)
+        pb.grid(row=0, column=8, sticky="nsew", padx=(4, 0))
+        row.grid(row=idx, column=0, sticky="ew")
+        info[row] = {
             "path": path,
             "duration": dur,
             "mode": mode,
@@ -350,8 +355,8 @@ def run_gui():
             "pb": pb,
             "result_var": result_var,
         }
-        rows.append(frame)
-        return frame
+        rows.append(row)
+        return row
 
     def process_row(row: ttk.Frame):
         nonlocal done
