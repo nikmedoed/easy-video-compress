@@ -18,7 +18,7 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
 * **Multithreaded Execution**: Utilizes `ThreadPoolExecutor` for parallel processing (up to 4 workers by default).
 * **Rich Progress Display**: Shows a real-time progress bar with estimated time remaining (powered by the [Rich](https://github.com/Textualize/rich) library).
 * **Windows Integration**: A `.bat` wrapper and a PowerShell installer script to add a **Compress video (FFmpeg)** entry to the Windows context menu.
-* **Drag-and-Drop GUI**: Launch the script without arguments (or with `--gui`) to open a drag-and-drop interface. Files convert in parallel with per-file progress bars and an overall progress display.
+* **Drag-and-Drop GUI**: Launch the script without arguments (or with `--gui`) to open a drag-and-drop interface. Files convert in parallel with per-file progress bars that stay aligned with each row and an overall progress display.
 
 ## Supported Video Formats
 
@@ -86,7 +86,7 @@ The script will calculate the required video bitrate and downscale resolution as
 
 ### 3. GUI Mode
 
-Launch the script without any arguments (or pass `--gui`) to open a drag-and-drop interface. Drop multiple videos onto the window or use the **Add Videos** button. Conversion begins immediately in parallel threads, and each row displays a progress bar. A bar at the bottom shows overall progress. Use the 5 MB toggle to switch between size and CRF compression modes.
+Launch the script without any arguments (or pass `--gui`) to open a drag-and-drop interface. Drop multiple videos onto the window or use the **Add Videos** button. Conversion begins immediately in parallel threads, and each row displays a progress bar inline. A bar at the bottom shows overall progress. Use the 5 MB toggle to switch between size and CRF compression modes.
 
 ## Windows Context Menu & PowerShell Integration
 
