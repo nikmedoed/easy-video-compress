@@ -205,6 +205,12 @@ def format_duration(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def progress_bar_text(percent: float, width: int = 10) -> str:
+    done = int(percent / 100 * width)
+    bar = "█" * done + " " * (width - done)
+    return f"[{bar}] {percent:3.0f}%"
+
+
 def open_in_folder(path: Path):
     folder = path.parent
     if sys.platform.startswith("win"):
@@ -251,6 +257,9 @@ def run_gui():
         "progress",
     )
     tree = ttk.Treeview(root, columns=columns, show="headings")
+    tree.tag_configure("in_progress", background="#ffe5b4")
+    tree.tag_configure("completed", background="#d4f7d4")
+    tree.tag_configure("error", background="#f7d4d4")
     widths = {
         "file": 200,
         "codec": 70,
@@ -260,7 +269,7 @@ def run_gui():
         "result": 80,
         "five_mb": 60,
         "alt": 40,
-        "progress": 70,
+        "progress": 120,
     }
     for c in columns:
         heading = "5MB?" if c == "five_mb" else c.title()
@@ -358,9 +367,10 @@ def run_gui():
                     "",
                     "✔" if mode == "size" else "",
                     "⇆",
-                    "0%",
+                    progress_bar_text(0),
                 ),
             )
+            tree.item(row, tags=("in_progress",))
             progress_vals[row] = 0.0
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
             auto_scroll = True
@@ -407,19 +417,22 @@ def run_gui():
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
         auto_scroll = True
         root.after(0, scroll_to_current)
+        tree.item(row, tags=("in_progress",))
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
             def do_update(p=percent):
                 progress_vals[row] = p
-                tree.set(row, "progress", f"{p:3.0f}%")
+                tree.set(row, "progress", progress_bar_text(p))
+                tree.item(row, tags=("completed",) if p >= 100 else ("in_progress",))
             root.after(0, do_update)
 
         try:
             compress_gui(path, out, mode, update)
             def finish():
                 progress_vals[row] = 100
-                tree.set(row, "progress", "100%")
+                tree.set(row, "progress", progress_bar_text(100))
+                tree.item(row, tags=("completed",))
                 tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
                 info[row]["done"] = True
                 scroll_to_current()
@@ -430,6 +443,7 @@ def run_gui():
                 tree.set(row, "result", "error")
                 progress_vals[row] = 0
                 info[row]["done"] = True
+                tree.item(row, tags=("error",))
                 scroll_to_current()
             root.after(0, mark_error)
         finally:
