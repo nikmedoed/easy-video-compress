@@ -102,7 +102,7 @@ To add a **Compress video (FFmpeg)** entry to the right-click menu:
 
 3. **Right-click** any supported video file or folder and choose **Compress video (FFmpeg)**.
 
-This installer will also automatically install FFmpeg via `winget` if it is not already present.
+This installer will also automatically install FFmpeg via `winget` if it is not already present. Additionally, a **Video Compress** shortcut will be placed in your Start Menu to launch the drag-and-drop GUI.
 
 ## File Overview
 
