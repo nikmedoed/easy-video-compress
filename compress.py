@@ -2,6 +2,7 @@ import argparse
 import subprocess
 import sys
 import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -273,7 +274,17 @@ class RowWidget(QtWidgets.QFrame):
 
 
 def run_gui():
-    app = QtWidgets.QApplication(sys.argv)
+    if not os.getenv("DISPLAY") and not os.getenv("WAYLAND_DISPLAY"):
+        console.log("[red]No graphical environment detected. Run without --gui to use CLI mode.[/]")
+        return
+    if not shutil.which("ffmpeg"):
+        console.log("[red]ffmpeg not found in PATH[/]")
+        return
+    try:
+        app = QtWidgets.QApplication(sys.argv)
+    except Exception as e:
+        console.log(f"[red]Failed to start GUI: {e}[/]")
+        return
     window = QtWidgets.QMainWindow()
     window.setWindowTitle("Video Compress")
     window.resize(900, 600)
