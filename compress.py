@@ -228,7 +228,6 @@ def run_gui():
         pass
 
     style = ttk.Style(root)
-    style.configure("Alt.TButton", padding=(2, 0), anchor="center")
 
     top = ttk.Frame(root)
     top.pack(fill="x")
@@ -260,8 +259,8 @@ def run_gui():
         "size": 80,
         "result": 80,
         "five_mb": 60,
-        "alt": 50,
-        "progress": 150,
+        "alt": 40,
+        "progress": 70,
     }
     for c in columns:
         heading = "5MB?" if c == "five_mb" else c.title()
@@ -278,16 +277,11 @@ def run_gui():
         nonlocal auto_scroll
         tree.yview(*args)
         auto_scroll = False
-        place_all()
 
     vsb.config(command=yview)
     tree.configure(yscrollcommand=vsb.set)
     tree.pack(fill="both", expand=True, padx=5, pady=5)
-    tree.bind("<Configure>", lambda e: place_all())
-    root.bind("<Configure>", lambda e: place_all())
-
-    pbars: dict[str, ttk.Progressbar] = {}
-    alts: dict[str, ttk.Button] = {}
+    progress_vals: dict[str, float] = {}
     info: dict[str, dict[str, object]] = {}
 
     last_idx = -1
@@ -300,7 +294,11 @@ def run_gui():
             return
         items = tree.get_children()
         for it in items:
-            if pbars.get(it) and not info.get(it, {}).get("done") and float(pbars[it]["value"]) < 100:
+            if (
+                it in progress_vals
+                and not info.get(it, {}).get("done")
+                and progress_vals.get(it, 0) < 100
+            ):
                 idx = items.index(it)
                 if idx != last_idx:
                     tree.yview_moveto(idx / len(items))
@@ -338,20 +336,6 @@ def run_gui():
             overall_bar["value"] = 0
             overall_label.config(text="0/0")
 
-    def place_widget(item):
-        root.update_idletasks()
-        pbbox = tree.bbox(item, "progress")
-        if pbbox:
-            x, y, w, h = pbbox
-            pbars[item].place(x=x, y=y, width=w, height=h)
-        abbox = tree.bbox(item, "alt")
-        if abbox:
-            x, y, w, h = abbox
-            alts[item].place(x=x, y=y, width=w, height=h)
-
-    def place_all():
-        for it in pbars:
-            place_widget(it)
 
     def add_files(paths, mode_override=None):
         nonlocal total, auto_scroll
@@ -373,21 +357,11 @@ def run_gui():
                     f"{size_mb:.1f} MB",
                     "",
                     "✔" if mode == "size" else "",
-                    "",
-                    "",
+                    "⇆",
+                    "0%",
                 ),
             )
-            pb = ttk.Progressbar(tree, maximum=100)
-            pbars[row] = pb
-            btn_alt = ttk.Button(
-                tree,
-                text="⇆",
-                width=4,
-                style="Alt.TButton",
-                command=lambda p=str(path), m="crf" if mode == "size" else "size": add_files([p], m),
-            )
-            alts[row] = btn_alt
-            place_widget(row)
+            progress_vals[row] = 0.0
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
             auto_scroll = True
             scroll_to_current()
@@ -407,6 +381,18 @@ def run_gui():
     tree.drop_target_register(DND_FILES)
     tree.dnd_bind("<<Drop>>", drop)
 
+    def on_click(event):
+        row = tree.identify_row(event.y)
+        col = tree.identify_column(event.x)
+        alt_col = f"#{columns.index('alt') + 1}"
+        if row and col == alt_col and tree.set(row, "alt") == "⇆":
+            current = info[row]["mode"]
+            mode = "crf" if current == "size" else "size"
+            add_files([str(info[row]["path"])], mode)
+            tree.set(row, "alt", "OK")
+
+    tree.bind("<Button-1>", on_click)
+
     def on_double(event):
         item = tree.identify_row(event.y)
         if item:
@@ -425,25 +411,25 @@ def run_gui():
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
             def do_update(p=percent):
-                pbars[row].config(value=p)
-                place_widget(row)
+                progress_vals[row] = p
+                tree.set(row, "progress", f"{p:3.0f}%")
             root.after(0, do_update)
 
         try:
             compress_gui(path, out, mode, update)
             def finish():
-                pbars[row].config(value=100)
+                progress_vals[row] = 100
+                tree.set(row, "progress", "100%")
                 tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
                 info[row]["done"] = True
-                place_widget(row)
                 scroll_to_current()
             root.after(0, finish)
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
             def mark_error():
                 tree.set(row, "result", "error")
+                progress_vals[row] = 0
                 info[row]["done"] = True
-                place_widget(row)
                 scroll_to_current()
             root.after(0, mark_error)
         finally:
@@ -452,7 +438,6 @@ def run_gui():
             root.after(0, scroll_to_current)
 
     def initial_layout():
-        place_all()
         scroll_to_current()
 
     root.after(100, initial_layout)
