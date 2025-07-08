@@ -212,12 +212,16 @@ def open_in_folder(path: Path):
         subprocess.Popen(["xdg-open", folder])
 
 
-class DropTable(QtWidgets.QTableWidget):
+class DropList(QtWidgets.QListWidget):
     filesDropped = QtCore.pyqtSignal(list)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setAcceptDrops(True)
+        self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.setSpacing(2)
+        self.setUniformItemSizes(True)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -226,6 +230,40 @@ class DropTable(QtWidgets.QTableWidget):
     def dropEvent(self, event):
         paths = [u.toLocalFile() for u in event.mimeData().urls()]
         self.filesDropped.emit(paths)
+
+
+class RowWidget(QtWidgets.QFrame):
+    def __init__(self, path: Path, codec: str, br: int, dur: float,
+                 size_mb: float, mode: str, add_callback):
+        super().__init__()
+        self.path = path
+        self.duration = dur
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(6)
+
+        layout.addWidget(QtWidgets.QLabel(path.name), 3)
+        layout.addWidget(QtWidgets.QLabel(codec))
+        layout.addWidget(QtWidgets.QLabel(f"{br//1000}k"))
+        layout.addWidget(QtWidgets.QLabel(format_duration(dur)))
+        layout.addWidget(QtWidgets.QLabel(f"{size_mb:.1f} MB"))
+
+        self.result_label = QtWidgets.QLabel("")
+        layout.addWidget(self.result_label)
+        layout.addWidget(QtWidgets.QLabel("✔" if mode == "size" else ""))
+
+        alt_btn = QtWidgets.QPushButton("⇆")
+        alt_btn.setFixedWidth(25)
+        alt_btn.clicked.connect(
+            lambda _, p=str(path), m="crf" if mode == "size" else "size":
+            add_callback([p], m)
+        )
+        layout.addWidget(alt_btn)
+
+        self.pb = QtWidgets.QProgressBar()
+        self.pb.setRange(0, 100)
+        self.pb.setFixedWidth(100)
+        layout.addWidget(self.pb)
 
 
 def run_gui():
@@ -253,27 +291,12 @@ def run_gui():
     overall_label = QtWidgets.QLabel("0/0")
     top.addWidget(overall_label)
 
-    table = DropTable()
-    table.setColumnCount(9)
-    table.setHorizontalHeaderLabels([
-        "File",
-        "Codec",
-        "BR",
-        "Duration",
-        "Size",
-        "Result",
-        "S",
-        "⇆",
-        "Progress",
-    ])
-    table.verticalHeader().setVisible(False)
-    table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-    table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-    table.filesDropped.connect(lambda paths: add_files(paths))
-    vbox.addWidget(table)
+    file_list = DropList()
+    file_list.filesDropped.connect(lambda paths: add_files(paths))
+    vbox.addWidget(file_list)
 
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
-    info: dict[int, dict[str, object]] = {}
+    info: dict[QtWidgets.QListWidgetItem, dict[str, object]] = {}
     total = 0
     done = 0
 
@@ -285,56 +308,45 @@ def run_gui():
             overall_bar.setValue(0)
             overall_label.setText("0/0")
 
-    def focus_row_if_first(row: int):
-        for r in range(table.rowCount()):
-            data = info.get(r)
+    def focus_item_if_first(item: QtWidgets.QListWidgetItem):
+        for i in range(file_list.count()):
+            it = file_list.item(i)
+            data = info.get(it)
             if not data:
                 continue
             pb: QtWidgets.QProgressBar = data["pb"]
             if not data["done"] and pb.value() < 100:
-                if r == row:
-                    table.scrollToItem(table.item(row, 0))
+                if it is item:
+                    file_list.scrollToItem(it)
                 break
 
-    def create_row(path: Path, mode: str) -> int:
+    def create_item(path: Path, mode: str) -> QtWidgets.QListWidgetItem:
         dur, codec, br = get_video_info(path)
         size_mb = path.stat().st_size / (1024 * 1024)
-        row = table.rowCount()
-        table.insertRow(row)
-        table.setItem(row, 0, QtWidgets.QTableWidgetItem(path.name))
-        table.setItem(row, 1, QtWidgets.QTableWidgetItem(codec))
-        table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{br//1000}k"))
-        table.setItem(row, 3, QtWidgets.QTableWidgetItem(format_duration(dur)))
-        table.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{size_mb:.1f} MB"))
-        result_item = QtWidgets.QTableWidgetItem("")
-        table.setItem(row, 5, result_item)
-        table.setItem(row, 6, QtWidgets.QTableWidgetItem("✔" if mode == "size" else ""))
-        alt_btn = QtWidgets.QPushButton("⇆")
-        alt_btn.setMaximumWidth(30)
-        alt_btn.clicked.connect(lambda _, p=str(path), m="crf" if mode == "size" else "size": add_files([p], m))
-        table.setCellWidget(row, 7, alt_btn)
-        pb = QtWidgets.QProgressBar()
-        pb.setRange(0, 100)
-        table.setCellWidget(row, 8, pb)
-        info[row] = {
+        widget = RowWidget(path, codec, br, dur, size_mb, mode, add_files)
+        item = QtWidgets.QListWidgetItem()
+        item.setSizeHint(widget.sizeHint())
+        file_list.addItem(item)
+        file_list.setItemWidget(item, widget)
+        info[item] = {
             "path": path,
             "duration": dur,
             "mode": mode,
             "done": False,
-            "pb": pb,
-            "result_item": result_item,
+            "pb": widget.pb,
+            "result_label": widget.result_label,
         }
-        return row
+        return item
 
-    def process_row(row: int):
+    def process_item(item: QtWidgets.QListWidgetItem):
         nonlocal done
-        data = info[row]
+        data = info[item]
         path = data["path"]
         mode = data["mode"]
         out = path.with_name(
             f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4"
         )
-        QtCore.QTimer.singleShot(0, lambda r=row: focus_row_if_first(r))
+        QtCore.QTimer.singleShot(0, lambda it=item: focus_item_if_first(it))
 
         def update(sec: float):
             percent = min(100, sec * 100 / data["duration"])
@@ -344,12 +356,12 @@ def run_gui():
             compress_gui(path, out, mode, update)
             def finish():
                 data["pb"].setValue(100)
-                data["result_item"].setText(f"{out.stat().st_size / (1024*1024):.1f}MB")
+                data["result_label"].setText(f"{out.stat().st_size / (1024*1024):.1f}MB")
                 data["done"] = True
             QtCore.QTimer.singleShot(0, finish)
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
-            QtCore.QTimer.singleShot(0, lambda: data["result_item"].setText("error"))
+            QtCore.QTimer.singleShot(0, lambda: data["result_label"].setText("error"))
             QtCore.QTimer.singleShot(0, lambda: data.update(done=True))
         finally:
             done += 1
@@ -362,10 +374,10 @@ def run_gui():
             if path.suffix.lower() not in VIDEO_EXTS:
                 continue
             mode = mode_override or ("size" if size_check.isChecked() else "crf")
-            row = create_row(path, mode)
+            item = create_item(path, mode)
             total += 1
             update_overall()
-            executor.submit(process_row, row)
+            executor.submit(process_item, item)
 
     def select_files():
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -377,7 +389,7 @@ def run_gui():
         add_files(files)
 
     add_btn.clicked.connect(select_files)
-    table.itemDoubleClicked.connect(lambda item: open_in_folder(info[item.row()]["path"]))
+    file_list.itemDoubleClicked.connect(lambda item: open_in_folder(info[item]["path"]))
 
     window.show()
     app.exec()
