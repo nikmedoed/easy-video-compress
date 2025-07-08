@@ -9,6 +9,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, BooleanVar
 from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -289,15 +290,25 @@ def run_gui():
     vsb.pack(side="right", fill="y")
 
     auto_scroll = True
+    last_action = time.time()
+
+    def user_action(event=None):
+        nonlocal auto_scroll, last_action
+        auto_scroll = False
+        last_action = time.time()
 
     def yview(*args):
-        nonlocal auto_scroll
         tree.yview(*args)
-        auto_scroll = False
+        user_action()
 
     vsb.config(command=yview)
     tree.configure(yscrollcommand=vsb.set)
     tree.pack(fill="both", expand=True, padx=5, pady=5)
+    root.bind_all("<MouseWheel>", user_action, add="+")
+    root.bind_all("<Button-4>", user_action, add="+")
+    root.bind_all("<Button-5>", user_action, add="+")
+    root.bind_all("<ButtonPress>", user_action, add="+")
+    root.bind_all("<Key>", user_action, add="+")
     progress_vals: dict[str, float] = {}
     info: dict[str, dict[str, object]] = {}
 
@@ -328,6 +339,13 @@ def run_gui():
             return
         scroll_scheduled = True
         root.after(100, _do_scroll)
+
+    def check_idle():
+        nonlocal auto_scroll, last_action
+        if not auto_scroll and time.time() - last_action >= 5:
+            auto_scroll = True
+            scroll_to_current()
+        root.after(1000, check_idle)
 
     def scroll_to(item):
         children = tree.get_children()
@@ -400,6 +418,7 @@ def run_gui():
     tree.dnd_bind("<<Drop>>", drop)
 
     def on_click(event):
+        user_action(event)
         row = tree.identify_row(event.y)
         col = tree.identify_column(event.x)
         alt_col = f"#{columns.index('alt') + 1}"
@@ -412,6 +431,7 @@ def run_gui():
     tree.bind("<Button-1>", on_click)
 
     def on_double(event):
+        user_action(event)
         item = tree.identify_row(event.y)
         if item:
             open_in_folder(info[item]["path"])
@@ -463,6 +483,7 @@ def run_gui():
         scroll_to_current()
 
     root.after(100, initial_layout)
+    root.after(1000, check_idle)
     root.mainloop()
 
 
