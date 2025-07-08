@@ -250,8 +250,9 @@ def run_gui():
     header = ttk.Frame(root)
     header.pack(fill="x", padx=5)
     columns = ["File", "Codec", "BR", "Dur", "Size", "Result", "5MB?", "Alt"]
+    weights = [4, 1, 1, 1, 1, 1, 1, 0]
     for i, text in enumerate(columns):
-        header.columnconfigure(i, weight=1, uniform="cols")
+        header.columnconfigure(i, weight=weights[i])
         ttk.Label(header, text=text, font=("Segoe UI", 9, "bold")).grid(
             row=0, column=i, sticky="nsew", padx=2
         )
@@ -273,7 +274,9 @@ def run_gui():
             self.canvas = canvas
             # mouse-wheel scrolling
             def _on_mousewheel(e):
-                delta = -1 if e.delta < 0 else 1
+                # e.delta is negative when scrolling down on Windows
+                # Use the sign to scroll in the expected direction
+                delta = -1 if e.delta > 0 else 1
                 canvas.yview_scroll(delta, "units")
 
             canvas.bind_all("<MouseWheel>", _on_mousewheel)
@@ -316,9 +319,10 @@ def run_gui():
     def create_row(path: Path, mode: str):
         dur, codec, br = get_video_info(path)
         size_mb = path.stat().st_size / (1024 * 1024)
-        frame = ttk.Frame(scroll.inner, padding=(0, 2))
-        for i in range(8):
-            frame.grid_columnconfigure(i, weight=1, uniform="cols")
+        frame = ttk.Frame(scroll.inner, padding=5)
+        weights = [4, 1, 1, 1, 1, 1, 1, 0]
+        for i, w in enumerate(weights):
+            frame.grid_columnconfigure(i, weight=w)
         ttk.Label(frame, text=path.name, anchor="w").grid(row=0, column=0, sticky="nsew")
         ttk.Label(frame, text=codec).grid(row=0, column=1, sticky="nsew")
         ttk.Label(frame, text=f"{br//1000}k").grid(row=0, column=2, sticky="nsew")
@@ -337,7 +341,7 @@ def run_gui():
         alt_btn.grid(row=0, column=7, sticky="nsew")
         pb = ttk.Progressbar(frame, maximum=100)
         pb.grid(row=1, column=0, columnspan=8, sticky="ew", pady=(2, 0))
-        frame.pack(fill="x")
+        frame.pack(fill="x", pady=2)
         info[frame] = {
             "path": path,
             "duration": dur,
