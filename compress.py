@@ -5,6 +5,7 @@ import os
 import threading
 import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import cycle
 from pathlib import Path
 
 from rich.console import Console
@@ -20,11 +21,28 @@ MAX_WORKERS = 4
 TARGET_MB = 4.5
 AUDIO_BR = 64_000
 
-COMMON_VARGS = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "faststart"]
+COMMON_VARGS_BASE = ["-pix_fmt", "yuv420p", "-movflags", "faststart"]
 COMMON_AARGS = ["-c:a", "aac", "-b:a", "128k"]
 SIZE_AARGS = ["-c:a", "aac", "-b:a", str(AUDIO_BR)]
 
 console = Console(log_time=True, log_path=False)
+
+
+def get_vargs(encoder: str) -> list[str]:
+    return ["-c:v", encoder] + COMMON_VARGS_BASE
+
+
+def encoder_available(name: str) -> bool:
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-v", "0", "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            text=True,
+            check=True,
+        ).stdout
+        return name in out
+    except Exception:
+        return False
 
 
 def get_duration(path: Path) -> float:
@@ -89,15 +107,18 @@ def run_with_progress(cmd: list[str], duration: float, task, progress: Progress)
     progress.update(task, completed=duration)
 
 
-def compress(path: Path, output: Path, mode: str, crf: int, preset: str, progress: Progress):
+def compress(path: Path, output: Path, mode: str, crf: int, preset: str, progress: Progress, encoder: str = "libx264"):
     dur = get_duration(path)
     task = progress.add_task(path.name, total=dur)
     console.log(f"Starting {mode}: {path.name}")
 
-    base = ["ffmpeg", "-y", "-i", str(path)] + COMMON_VARGS
+    base = ["ffmpeg", "-y", "-i", str(path)] + get_vargs(encoder)
 
     if mode == "crf":
-        args = base + ["-preset", preset, "-crf", str(crf)] + COMMON_AARGS + [str(output)]
+        if encoder != "libx264":
+            args = base + ["-preset", preset, "-cq", str(crf)] + COMMON_AARGS + [str(output)]
+        else:
+            args = base + ["-preset", preset, "-crf", str(crf)] + COMMON_AARGS + [str(output)]
     else:
         w, h = probe_video(path)
         target_b = int(TARGET_MB * 1024 * 1024)
@@ -177,11 +198,14 @@ def run_ffmpeg_gui(cmd: list[str], duration: float, update):
     update(duration)
 
 
-def compress_gui(path: Path, output: Path, mode: str, update):
+def compress_gui(path: Path, output: Path, mode: str, update, encoder: str = "libx264"):
     dur = get_duration(path)
-    base = ["ffmpeg", "-y", "-i", str(path)] + COMMON_VARGS
+    base = ["ffmpeg", "-y", "-i", str(path)] + get_vargs(encoder)
     if mode == "crf":
-        args = base + ["-preset", "slow", "-crf", "30"] + COMMON_AARGS + [str(output)]
+        if encoder != "libx264":
+            args = base + ["-preset", "slow", "-cq", "30"] + COMMON_AARGS + [str(output)]
+        else:
+            args = base + ["-preset", "slow", "-crf", "30"] + COMMON_AARGS + [str(output)]
     else:
         w, h = probe_video(path)
         target_b = int(TARGET_MB * 1024 * 1024)
@@ -229,7 +253,7 @@ def open_in_folder(path: Path):
         subprocess.Popen(["xdg-open", folder])
 
 
-def run_gui():
+def run_gui(use_nvenc: bool = False):
     root = TkinterDnD.Tk()
     root.title("Video Compress")
     try:
@@ -242,6 +266,8 @@ def run_gui():
         pass
 
     style = ttk.Style(root)
+
+    enc_cycle = cycle(["h264_nvenc", "libx264"]) if use_nvenc else cycle(["libx264"])
 
     top = ttk.Frame(root)
     top.pack(fill="x")
@@ -408,7 +434,8 @@ def run_gui():
             scroll_to_current()
             total += 1
             update_overall()
-            executor.submit(process_row, row)
+            enc = next(enc_cycle)
+            executor.submit(process_row, row, enc)
 
     def select_files():
         files = filedialog.askopenfilenames(filetypes=[("Videos", "*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm")])
@@ -443,7 +470,7 @@ def run_gui():
 
     tree.bind("<Double-1>", on_double)
 
-    def process_row(row):
+    def process_row(row, encoder):
         nonlocal done, auto_scroll
         path = info[row]["path"]
         mode = info[row]["mode"]
@@ -460,7 +487,7 @@ def run_gui():
             root.after(0, do_update)
 
         try:
-            compress_gui(path, out, mode, update)
+            compress_gui(path, out, mode, update, encoder)
             def finish():
                 progress_vals[row] = 100
                 tree.set(row, "progress", progress_bar_text(100))
@@ -494,23 +521,35 @@ def run_gui():
 def main():
     args = sys.argv[1:]
     if not args or args[0] in {"gui", "--gui"}:
-        run_gui()
+        gui_parser = argparse.ArgumentParser()
+        gui_parser.add_argument("--nvenc", action="store_true")
+        gui_opts = gui_parser.parse_args(args[1:] if args else [])
+        run_gui(gui_opts.nvenc)
         return
 
     size_mode = args and args[0] == "5"
+    use_nvenc = False
     if size_mode:
-        inputs = args[1:]
+        parser = argparse.ArgumentParser(prog="compress")
+        parser.add_argument("dummy")
+        parser.add_argument("inputs", nargs="+")
+        parser.add_argument("--nvenc", action="store_true")
+        opts = parser.parse_args(["5"] + args[1:])
+        inputs = opts.inputs
         crf = None
         preset = None
+        use_nvenc = opts.nvenc and encoder_available("h264_nvenc")
     else:
         parser = argparse.ArgumentParser(prog="compress")
         parser.add_argument("inputs", nargs="+")
         parser.add_argument("-crf", type=int, default=30)
         parser.add_argument("-preset", default="slow")
+        parser.add_argument("--nvenc", action="store_true")
         opts = parser.parse_args()
         inputs = opts.inputs
         crf = opts.crf
         preset = opts.preset
+        use_nvenc = opts.nvenc and encoder_available("h264_nvenc")
 
     videos = find_all_videos(inputs)
     if not videos:
@@ -532,8 +571,18 @@ def main():
         TimeRemainingColumn(),
         console=console,
     ) as prog, ThreadPoolExecutor(max_workers=min(len(tasks), MAX_WORKERS)) as exe:
+        enc_cycle = cycle(["h264_nvenc", "libx264"]) if (not size_mode and use_nvenc) or (size_mode and use_nvenc) else cycle(["libx264"])
         futures = [
-            exe.submit(compress, inp, out, "size" if size_mode else "crf", crf, preset, prog)
+            exe.submit(
+                compress,
+                inp,
+                out,
+                "size" if size_mode else "crf",
+                crf,
+                preset,
+                prog,
+                next(enc_cycle),
+            )
             for inp, out in tasks
         ]
         for _ in as_completed(futures):

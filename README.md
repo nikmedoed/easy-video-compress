@@ -16,6 +16,7 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
 * **Size-Based Compression**: Target a fixed output size (\~4.5 MB) by automatically adjusting bitrate and resolution.
 * **Batch Processing**: Accepts individual files or directories (recursively searches for supported video extensions).
 * **Multithreaded Execution**: Utilizes `ThreadPoolExecutor` for parallel processing (up to 4 workers by default).
+* **GPU Support**: Pass `--nvenc` to leverage NVIDIA NVENC alongside CPU encoding for faster batch jobs.
 * **Rich Progress Display**: Shows a real-time progress bar with estimated time remaining (powered by the [Rich](https://github.com/Textualize/rich) library).
 * **Windows Integration**: A `.bat` wrapper and a PowerShell installer script to add a **Compress video (FFmpeg)** entry to the Windows context menu.
 * **Drag-and-Drop GUI**: Launch the script without arguments (or with `--gui`) to open a drag-and-drop interface. Files convert in parallel with per-file progress percentages and an overall progress display.
@@ -63,8 +64,8 @@ Compress one or more videos or folders of videos using a CRF factor:
 # Using the batch wrapper:
 compress.bat video1.mp4 /path/to/videos_folder
 
-# Or directly with Python:
-python compress.py video1.mp4 /path/to/videos_folder -crf 28 -preset fast
+# Or directly with Python (add `--nvenc` to use the GPU if available):
+python compress.py video1.mp4 /path/to/videos_folder -crf 28 -preset fast [--nvenc]
 ```
 
 * **`-crf`**: Integer Constant Rate Factor (default: 30).
@@ -78,8 +79,8 @@ Compress videos to a fixed target size (\~4.5 MB). Pass `5` as the first argumen
 # Using the batch wrapper:
 compress.bat 5 video1.mp4 /path/to/videos_folder
 
-# Or directly with Python:
-python compress.py 5 video1.mp4 /path/to/videos_folder
+# Or directly with Python (add `--nvenc` for GPU acceleration):
+python compress.py 5 video1.mp4 /path/to/videos_folder [--nvenc]
 ```
 
 The script will calculate the required video bitrate and downscale resolution as needed to meet the size target.
@@ -87,6 +88,7 @@ The script will calculate the required video bitrate and downscale resolution as
 ### 3. GUI Mode
 
 Launch the script without any arguments (or pass `--gui`) to open a drag-and-drop interface. Drop multiple videos onto the window or use the **Add Videos** button. Conversion begins immediately in parallel threads, and each row displays progress in percent. A bar at the bottom shows overall progress. Use the 5 MB toggle to switch between size and CRF compression modes.
+Pass `--nvenc` alongside `--gui` to enable GPU acceleration if available.
 
 ## Windows Context Menu & PowerShell Integration
 
