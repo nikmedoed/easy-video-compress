@@ -2,16 +2,13 @@ import argparse
 import subprocess
 import sys
 import os
-import threading
-import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
-import tkinter as tk
-from tkinter import ttk, filedialog, BooleanVar
-from tkinterdnd2 import DND_FILES, TkinterDnD
+
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
 SHORT_THRESHOLD = 2.0
@@ -215,133 +212,121 @@ def open_in_folder(path: Path):
         subprocess.Popen(["xdg-open", folder])
 
 
+class DropTable(QtWidgets.QTableWidget):
+    filesDropped = QtCore.pyqtSignal(list)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        paths = [u.toLocalFile() for u in event.mimeData().urls()]
+        self.filesDropped.emit(paths)
+
+
 def run_gui():
-    root = TkinterDnD.Tk()
-    root.title("Video Compress")
-    root.geometry("900x600")
-    root.minsize(800, 400)
-    try:
-        if sys.platform.startswith("win"):
-            root.iconbitmap(Path(__file__).with_name("icon/icon.ico"))
-        else:
-            img = tk.PhotoImage(file=Path(__file__).with_name("icon/icon.png"))
-            root.iconphoto(True, img)
-    except Exception:
-        pass
+    app = QtWidgets.QApplication(sys.argv)
+    window = QtWidgets.QMainWindow()
+    window.setWindowTitle("Video Compress")
+    window.resize(900, 600)
+    central = QtWidgets.QWidget()
+    window.setCentralWidget(central)
+    vbox = QtWidgets.QVBoxLayout(central)
 
-    style = ttk.Style(root)
-    style.configure("Alt.TButton", padding=(2, 0), anchor="center")
+    top = QtWidgets.QHBoxLayout()
+    vbox.addLayout(top)
 
-    top = ttk.Frame(root)
-    top.pack(fill="x")
+    size_check = QtWidgets.QCheckBox("5MB mode")
+    top.addWidget(size_check)
 
-    size_var = BooleanVar(value=False)
-    chk = ttk.Checkbutton(top, text="5MB mode", variable=size_var)
-    chk.pack(side="left", padx=5, pady=5)
+    add_btn = QtWidgets.QPushButton("Add Videos")
+    top.addWidget(add_btn)
 
-    btn = ttk.Button(top, text="Add Videos")
-    btn.pack(side="left", padx=5, pady=5)
+    overall_bar = QtWidgets.QProgressBar()
+    overall_bar.setRange(0, 100)
+    top.addWidget(overall_bar, 1)
 
-    overall_bar = ttk.Progressbar(top, length=200)
-    overall_bar.pack(side="left", fill="x", expand=True, padx=5)
-    overall_label = ttk.Label(top, text="0/0")
-    overall_label.pack(side="left", padx=5)
+    overall_label = QtWidgets.QLabel("0/0")
+    top.addWidget(overall_label)
 
-    class Scrollable(ttk.Frame):
-        def __init__(self, master):
-            super().__init__(master)
-            canvas = tk.Canvas(self, borderwidth=0)
-            vsb = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-            canvas.configure(yscrollcommand=vsb.set)
-            self.inner = ttk.Frame(canvas)
-            self.inner.bind(
-                "<Configure>",
-                lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
-            )
-            canvas.create_window((0, 0), window=self.inner, anchor="nw")
-            canvas.pack(side="left", fill="both", expand=True)
-            vsb.pack(side="right", fill="y")
-            self.canvas = canvas
-            # mouse-wheel scrolling
-            def _on_mousewheel(e):
-                delta = -1 if e.delta < 0 else 1
-                canvas.yview_scroll(delta, "units")
+    table = DropTable()
+    table.setColumnCount(9)
+    table.setHorizontalHeaderLabels([
+        "File",
+        "Codec",
+        "BR",
+        "Duration",
+        "Size",
+        "Result",
+        "S",
+        "⇆",
+        "Progress",
+    ])
+    table.verticalHeader().setVisible(False)
+    table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+    table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+    table.filesDropped.connect(lambda paths: add_files(paths))
+    vbox.addWidget(table)
 
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-            canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
-            canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
-
-        def scroll_to(self, widget):
-            self.update_idletasks()
-            y = widget.winfo_y()
-            h = self.inner.winfo_height()
-            if h:
-                self.canvas.yview_moveto(y / h)
-
-    scroll = Scrollable(root)
-    scroll.pack(fill="both", expand=True, padx=5, pady=5)
-
-    rows: list[ttk.Frame] = []
-    info: dict[ttk.Frame, dict[str, object]] = {}
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    info: dict[int, dict[str, object]] = {}
     total = 0
     done = 0
 
     def update_overall():
         if total:
-            overall_bar["value"] = done * 100 / total
-            overall_label.config(text=f"{done}/{total}")
+            overall_bar.setValue(int(done * 100 / total))
+            overall_label.setText(f"{done}/{total}")
         else:
-            overall_bar["value"] = 0
-            overall_label.config(text="0/0")
+            overall_bar.setValue(0)
+            overall_label.setText("0/0")
 
-    def focus_row_if_first(row):
-        for fr in rows:
-            data = info[fr]
-            pb: ttk.Progressbar = data["pb"]
-            if not data["done"] and pb["value"] < 100:
-                if fr == row:
-                    scroll.scroll_to(fr)
+    def focus_row_if_first(row: int):
+        for r in range(table.rowCount()):
+            data = info.get(r)
+            if not data:
+                continue
+            pb: QtWidgets.QProgressBar = data["pb"]
+            if not data["done"] and pb.value() < 100:
+                if r == row:
+                    table.scrollToItem(table.item(row, 0))
                 break
 
-    def create_row(path: Path, mode: str):
+    def create_row(path: Path, mode: str) -> int:
         dur, codec, br = get_video_info(path)
         size_mb = path.stat().st_size / (1024 * 1024)
-        frame = ttk.Frame(scroll.inner, padding=(0, 2))
-        frame.grid_columnconfigure(0, weight=3)
-        for i in range(1, 9):
-            frame.grid_columnconfigure(i, weight=1)
-        ttk.Label(frame, text=path.name, anchor="w").grid(row=0, column=0, sticky="nsew")
-        ttk.Label(frame, text=codec).grid(row=0, column=1, sticky="nsew")
-        ttk.Label(frame, text=f"{br//1000}k").grid(row=0, column=2, sticky="nsew")
-        ttk.Label(frame, text=format_duration(dur)).grid(row=0, column=3, sticky="nsew")
-        ttk.Label(frame, text=f"{size_mb:.1f} MB").grid(row=0, column=4, sticky="nsew")
-        result_var = tk.StringVar(value="")
-        ttk.Label(frame, textvariable=result_var).grid(row=0, column=5, sticky="nsew")
-        ttk.Label(frame, text="✔" if mode == "size" else "").grid(row=0, column=6, sticky="nsew")
-        alt_btn = ttk.Button(
-            frame,
-            text="⇆",
-            width=4,
-            style="Alt.TButton",
-            command=lambda p=str(path), m="crf" if mode == "size" else "size": add_files([p], m),
-        )
-        alt_btn.grid(row=0, column=7, sticky="nsew")
-        pb = ttk.Progressbar(frame, maximum=100)
-        pb.grid(row=0, column=8, sticky="nsew")
-        frame.pack(fill="x")
-        info[frame] = {
+        row = table.rowCount()
+        table.insertRow(row)
+        table.setItem(row, 0, QtWidgets.QTableWidgetItem(path.name))
+        table.setItem(row, 1, QtWidgets.QTableWidgetItem(codec))
+        table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{br//1000}k"))
+        table.setItem(row, 3, QtWidgets.QTableWidgetItem(format_duration(dur)))
+        table.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{size_mb:.1f} MB"))
+        result_item = QtWidgets.QTableWidgetItem("")
+        table.setItem(row, 5, result_item)
+        table.setItem(row, 6, QtWidgets.QTableWidgetItem("✔" if mode == "size" else ""))
+        alt_btn = QtWidgets.QPushButton("⇆")
+        alt_btn.setMaximumWidth(30)
+        alt_btn.clicked.connect(lambda _, p=str(path), m="crf" if mode == "size" else "size": add_files([p], m))
+        table.setCellWidget(row, 7, alt_btn)
+        pb = QtWidgets.QProgressBar()
+        pb.setRange(0, 100)
+        table.setCellWidget(row, 8, pb)
+        info[row] = {
             "path": path,
             "duration": dur,
             "mode": mode,
             "done": False,
             "pb": pb,
-            "result_var": result_var,
+            "result_item": result_item,
         }
-        rows.append(frame)
-        return frame
+        return row
 
-    def process_row(row: ttk.Frame):
+    def process_row(row: int):
         nonlocal done
         data = info[row]
         path = data["path"]
@@ -349,26 +334,26 @@ def run_gui():
         out = path.with_name(
             f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4"
         )
-        root.after(0, lambda r=row: focus_row_if_first(r))
+        QtCore.QTimer.singleShot(0, lambda r=row: focus_row_if_first(r))
 
         def update(sec: float):
             percent = min(100, sec * 100 / data["duration"])
-            root.after(0, lambda p=percent: data["pb"].config(value=p))
+            QtCore.QTimer.singleShot(0, lambda p=percent: data["pb"].setValue(int(p)))
 
         try:
             compress_gui(path, out, mode, update)
             def finish():
-                data["pb"].config(value=100)
-                data["result_var"].set(f"{out.stat().st_size / (1024*1024):.1f} MB")
+                data["pb"].setValue(100)
+                data["result_item"].setText(f"{out.stat().st_size / (1024*1024):.1f}MB")
                 data["done"] = True
-            root.after(0, finish)
+            QtCore.QTimer.singleShot(0, finish)
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
-            root.after(0, lambda: data["result_var"].set("error"))
-            root.after(0, lambda: data.update(done=True))
+            QtCore.QTimer.singleShot(0, lambda: data["result_item"].setText("error"))
+            QtCore.QTimer.singleShot(0, lambda: data.update(done=True))
         finally:
             done += 1
-            root.after(0, update_overall)
+            QtCore.QTimer.singleShot(0, update_overall)
 
     def add_files(paths, mode_override=None):
         nonlocal total
@@ -376,36 +361,27 @@ def run_gui():
             path = Path(p)
             if path.suffix.lower() not in VIDEO_EXTS:
                 continue
-            mode = mode_override or ("size" if size_var.get() else "crf")
+            mode = mode_override or ("size" if size_check.isChecked() else "crf")
             row = create_row(path, mode)
             total += 1
             update_overall()
             executor.submit(process_row, row)
 
     def select_files():
-        files = filedialog.askopenfilenames(
-            filetypes=[("Videos", "*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm")]
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            window,
+            "Select Videos",
+            "",
+            "Videos (*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm)",
         )
-        add_files(root.splitlist(files))
+        add_files(files)
 
-    btn.config(command=select_files)
+    add_btn.clicked.connect(select_files)
+    table.itemDoubleClicked.connect(lambda item: open_in_folder(info[item.row()]["path"]))
 
-    def drop(event):
-        add_files(root.splitlist(event.data))
+    window.show()
+    app.exec()
 
-    root.drop_target_register(DND_FILES)
-    root.dnd_bind("<<Drop>>", drop)
-
-    def on_double(event):
-        widget = event.widget
-        for fr in rows:
-            if fr == widget or widget in fr.winfo_children():
-                open_in_folder(info[fr]["path"])
-                break
-
-    scroll.inner.bind("<Double-1>", on_double)
-
-    root.mainloop()
 
 
 def main():
