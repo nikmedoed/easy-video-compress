@@ -206,16 +206,21 @@ def format_duration(seconds: float) -> str:
 
 
 def progress_bar_text(percent: float, width: int = 16) -> str:
+    """Return an inline progress bar string with centered percent text."""
+
     percent = max(0.0, min(100.0, percent))
-    text = f" {percent:3.0f}% "
-    inner = width - 2
-    bar = [" "] * inner
-    fill_len = int(inner * percent / 100)
-    for i in range(fill_len):
-        bar[i] = "█"
-    start = (inner - len(text)) // 2
+
+    text = f"{percent:3.0f}%"
+    bar = [" "] * width
+    start = (width - len(text)) // 2
     bar[start:start + len(text)] = list(text)
-    return "[" + "".join(bar) + "]"
+
+    fill_len = int(width * percent / 100)
+    for i in range(fill_len):
+        if not (start <= i < start + len(text)):
+            bar[i] = "█"
+
+    return "".join(bar)
 
 
 def open_in_folder(path: Path):
