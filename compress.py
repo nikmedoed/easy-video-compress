@@ -233,10 +233,11 @@ def run_gui():
     root = TkinterDnD.Tk()
     root.title("Video Compress")
     try:
+        icon_dir = Path(__file__).parent / "icon"
         if sys.platform.startswith("win"):
-            root.iconbitmap(Path(__file__).with_name("icon/icon.ico"))
+            root.iconbitmap(icon_dir / "icon.ico")
         else:
-            img = tk.PhotoImage(file=Path(__file__).with_name("icon/icon.png"))
+            img = tk.PhotoImage(file=icon_dir / "icon.png")
             root.iconphoto(True, img)
     except Exception:
         pass
