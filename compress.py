@@ -274,8 +274,12 @@ class RowWidget(QtWidgets.QFrame):
 
 
 def run_gui():
-    if not os.getenv("DISPLAY") and not os.getenv("WAYLAND_DISPLAY"):
-        console.log("[red]No graphical environment detected. Run without --gui to use CLI mode.[/]")
+    if sys.platform.startswith("linux") and not (
+        os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY")
+    ):
+        console.log(
+            "[red]No graphical environment detected. Provide files as arguments to use CLI mode.[/]"
+        )
         return
     if not shutil.which("ffmpeg"):
         console.log("[red]ffmpeg not found in PATH[/]")
