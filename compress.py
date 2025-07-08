@@ -4,6 +4,7 @@ import sys
 import os
 import threading
 import queue
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -273,11 +274,16 @@ def run_gui():
     vsb.pack(side="right", fill="y")
 
     auto_scroll = True
+    last_action = time.time()
+
+    def user_activity(event=None):
+        nonlocal auto_scroll, last_action
+        auto_scroll = False
+        last_action = time.time()
 
     def yview(*args):
-        nonlocal auto_scroll
         tree.yview(*args)
-        auto_scroll = False
+        user_activity()
         place_all()
 
     vsb.config(command=yview)
@@ -286,12 +292,28 @@ def run_gui():
     tree.bind("<Configure>", lambda e: place_all())
     root.bind("<Configure>", lambda e: place_all())
 
+    # user interaction bindings
+    root.bind_all("<Button>", user_activity, add="+")
+    root.bind_all("<Key>", user_activity, add="+")
+    root.bind_all("<MouseWheel>", user_activity, add="+")
+    root.bind_all("<Button-4>", user_activity, add="+")
+    root.bind_all("<Button-5>", user_activity, add="+")
+
     pbars: dict[str, ttk.Progressbar] = {}
     alts: dict[str, ttk.Button] = {}
     info: dict[str, dict[str, object]] = {}
 
     last_idx = -1
     scroll_scheduled = False
+
+    def check_auto_scroll():
+        nonlocal auto_scroll
+        if not auto_scroll and time.time() - last_action >= 5:
+            auto_scroll = True
+            scroll_to_current()
+        root.after(1000, check_auto_scroll)
+
+    root.after(1000, check_auto_scroll)
 
     def _do_scroll():
         nonlocal scroll_scheduled, last_idx
