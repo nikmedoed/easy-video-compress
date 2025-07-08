@@ -310,6 +310,8 @@ def run_gui():
     root.bind_all("<Button-4>", user_action, add="+")
     root.bind_all("<Button-5>", user_action, add="+")
     root.bind_all("<ButtonPress>", user_action, add="+")
+    root.bind_all("<ButtonRelease>", user_action, add="+")
+    root.bind_all("<B1-Motion>", user_action, add="+")
     root.bind_all("<Key>", user_action, add="+")
     progress_vals: dict[str, float] = {}
     info: dict[str, dict[str, object]] = {}
@@ -403,7 +405,6 @@ def run_gui():
             tree.item(row, tags=("waiting",))
             progress_vals[row] = 0.0
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
-            auto_scroll = True
             scroll_to_current()
             total += 1
             update_overall()
@@ -447,7 +448,6 @@ def run_gui():
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
-        auto_scroll = True
         root.after(0, scroll_to_current)
         tree.item(row, tags=("in_progress",))
 
