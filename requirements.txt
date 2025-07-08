@@ -1,2 +1,3 @@
 rich
 tkinterdnd2
+pillow
