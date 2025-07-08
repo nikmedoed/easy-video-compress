@@ -227,9 +227,15 @@ class DropList(QtWidgets.QListWidget):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
     def dropEvent(self, event):
-        paths = [u.toLocalFile() for u in event.mimeData().urls()]
-        self.filesDropped.emit(paths)
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            paths = [u.toLocalFile() for u in event.mimeData().urls()]
+            self.filesDropped.emit(paths)
 
 
 class RowWidget(QtWidgets.QFrame):
