@@ -246,6 +246,15 @@ def open_in_folder(path: Path):
 
 
 def run_gui():
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "easy-video-compress"
+            )
+        except Exception:
+            pass
+
     root = TkinterDnD.Tk()
     root.title("Video Compress")
     try:
