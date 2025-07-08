@@ -286,7 +286,7 @@ def run_gui():
     tree.bind("<Configure>", lambda e: place_all())
     root.bind("<Configure>", lambda e: place_all())
 
-    pbars: dict[str, ttk.Progressbar] = {}
+    progress_vals: dict[str, float] = {}
     alts: dict[str, ttk.Button] = {}
     info: dict[str, dict[str, object]] = {}
 
@@ -300,7 +300,11 @@ def run_gui():
             return
         items = tree.get_children()
         for it in items:
-            if pbars.get(it) and not info.get(it, {}).get("done") and float(pbars[it]["value"]) < 100:
+            if (
+                it in progress_vals
+                and not info.get(it, {}).get("done")
+                and progress_vals.get(it, 0) < 100
+            ):
                 idx = items.index(it)
                 if idx != last_idx:
                     tree.yview_moveto(idx / len(items))
@@ -340,17 +344,13 @@ def run_gui():
 
     def place_widget(item):
         root.update_idletasks()
-        pbbox = tree.bbox(item, "progress")
-        if pbbox:
-            x, y, w, h = pbbox
-            pbars[item].place(x=x, y=y, width=w, height=h)
         abbox = tree.bbox(item, "alt")
         if abbox:
             x, y, w, h = abbox
             alts[item].place(x=x, y=y, width=w, height=h)
 
     def place_all():
-        for it in pbars:
+        for it in alts:
             place_widget(it)
 
     def add_files(paths, mode_override=None):
@@ -374,11 +374,10 @@ def run_gui():
                     "",
                     "✔" if mode == "size" else "",
                     "",
-                    "",
+                    "0%",
                 ),
             )
-            pb = ttk.Progressbar(tree, maximum=100)
-            pbars[row] = pb
+            progress_vals[row] = 0.0
             btn_alt = ttk.Button(
                 tree,
                 text="⇆",
@@ -425,14 +424,16 @@ def run_gui():
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
             def do_update(p=percent):
-                pbars[row].config(value=p)
+                progress_vals[row] = p
+                tree.set(row, "progress", f"{p:3.0f}%")
                 place_widget(row)
             root.after(0, do_update)
 
         try:
             compress_gui(path, out, mode, update)
             def finish():
-                pbars[row].config(value=100)
+                progress_vals[row] = 100
+                tree.set(row, "progress", "100%")
                 tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
                 info[row]["done"] = True
                 place_widget(row)
@@ -442,6 +443,7 @@ def run_gui():
             console.log(f"[red]Error {path.name}: {e}[/]")
             def mark_error():
                 tree.set(row, "result", "error")
+                progress_vals[row] = 0
                 info[row]["done"] = True
                 place_widget(row)
                 scroll_to_current()
