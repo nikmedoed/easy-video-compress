@@ -247,6 +247,15 @@ def run_gui():
     overall_label = ttk.Label(top, text="0/0")
     overall_label.pack(side="left", padx=5)
 
+    header = ttk.Frame(root)
+    header.pack(fill="x", padx=5)
+    columns = ["File", "Codec", "BR", "Dur", "Size", "Result", "5MB?", "Alt"]
+    for i, text in enumerate(columns):
+        header.columnconfigure(i, weight=1, uniform="cols")
+        ttk.Label(header, text=text, font=("Segoe UI", 9, "bold")).grid(
+            row=0, column=i, sticky="nsew", padx=2
+        )
+
     class Scrollable(ttk.Frame):
         def __init__(self, master):
             super().__init__(master)
@@ -308,9 +317,8 @@ def run_gui():
         dur, codec, br = get_video_info(path)
         size_mb = path.stat().st_size / (1024 * 1024)
         frame = ttk.Frame(scroll.inner, padding=(0, 2))
-        frame.grid_columnconfigure(0, weight=3)
-        for i in range(1, 9):
-            frame.grid_columnconfigure(i, weight=1)
+        for i in range(8):
+            frame.grid_columnconfigure(i, weight=1, uniform="cols")
         ttk.Label(frame, text=path.name, anchor="w").grid(row=0, column=0, sticky="nsew")
         ttk.Label(frame, text=codec).grid(row=0, column=1, sticky="nsew")
         ttk.Label(frame, text=f"{br//1000}k").grid(row=0, column=2, sticky="nsew")
@@ -328,7 +336,7 @@ def run_gui():
         )
         alt_btn.grid(row=0, column=7, sticky="nsew")
         pb = ttk.Progressbar(frame, maximum=100)
-        pb.grid(row=0, column=8, sticky="nsew")
+        pb.grid(row=1, column=0, columnspan=8, sticky="ew", pady=(2, 0))
         frame.pack(fill="x")
         info[frame] = {
             "path": path,
