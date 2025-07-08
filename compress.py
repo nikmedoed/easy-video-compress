@@ -290,6 +290,7 @@ def run_gui():
     vsb.pack(side="right", fill="y")
 
     auto_scroll = True
+    scrolling_programmatically = False
     last_action = time.time()
 
     def user_action(event=None):
@@ -299,7 +300,8 @@ def run_gui():
 
     def yview(*args):
         tree.yview(*args)
-        user_action()
+        if not scrolling_programmatically:
+            user_action()
 
     vsb.config(command=yview)
     tree.configure(yscrollcommand=vsb.set)
@@ -316,7 +318,7 @@ def run_gui():
     scroll_scheduled = False
 
     def _do_scroll():
-        nonlocal scroll_scheduled, last_idx
+        nonlocal scroll_scheduled, last_idx, scrolling_programmatically
         scroll_scheduled = False
         if not auto_scroll:
             return
@@ -329,7 +331,9 @@ def run_gui():
             ):
                 idx = items.index(it)
                 if idx != last_idx:
+                    scrolling_programmatically = True
                     tree.yview_moveto(idx / len(items))
+                    scrolling_programmatically = False
                     last_idx = idx
                 break
 
