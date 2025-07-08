@@ -66,7 +66,7 @@ Set-ItemProperty -Path $baseKey -Name 'MultiSelectModel' -Value 'Player'
 # Define the command to run
 $cmdKey = "$baseKey\command"
 New-Item -Path $cmdKey -Force | Out-Null
-$command = "cmd.exe /c `"$bat`" %V"
+$command = "`"$bat`" %V"
 Set-ItemProperty -Path $cmdKey -Name '(Default)' -Value $command
 
 # Install ffmpeg via winget if missing

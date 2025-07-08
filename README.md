@@ -17,7 +17,7 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
 * **Batch Processing**: Accepts individual files or directories (recursively searches for supported video extensions).
 * **Multithreaded Execution**: Utilizes `ThreadPoolExecutor` for parallel processing (up to 4 workers by default).
 * **Rich Progress Display**: Shows a real-time progress bar with estimated time remaining (powered by the [Rich](https://github.com/Textualize/rich) library).
-* **Windows Integration**: A `.bat` wrapper and a PowerShell installer script to add a **Compress video (FFmpeg)** entry to the Windows context menu.
+* **Windows Integration**: A `.bat` wrapper and a PowerShell installer script to add a **Compress video (FFmpeg)** entry to the Windows context menu. Selecting multiple files from Explorer sends them all to one console window.
 * **Drag-and-Drop GUI**: Launch the script without arguments (or with `--gui`) to open a drag-and-drop interface. Files convert in parallel with per-file progress percentages and an overall progress display.
 
 ## Supported Video Formats
