@@ -27,6 +27,22 @@ SIZE_AARGS = ["-c:a", "aac", "-b:a", str(AUDIO_BR)]
 console = Console(log_time=True, log_path=False)
 
 
+def ensure_icon_ico() -> Path:
+    """Generate icon.ico from icon.png if missing."""
+    icon_dir = Path(__file__).parent / "icon"
+    ico = icon_dir / "icon.ico"
+    png = icon_dir / "icon.png"
+    if not ico.exists() and png.exists():
+        try:
+            from PIL import Image  # type: ignore
+            img = Image.open(png)
+            img.save(ico, sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (256, 256)])
+            console.log(f"Generated {ico.name} from {png.name}")
+        except Exception as e:  # pragma: no cover - best effort
+            console.log(f"[yellow]Could not generate {ico.name}: {e}[/]")
+    return icon_dir
+
+
 def get_duration(path: Path) -> float:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -233,12 +249,11 @@ def run_gui():
     root = TkinterDnD.Tk()
     root.title("Video Compress")
     try:
-        icon_dir = Path(__file__).parent / "icon"
+        icon_dir = ensure_icon_ico()
         if sys.platform.startswith("win"):
             root.iconbitmap(icon_dir / "icon.ico")
-        else:
-            img = tk.PhotoImage(file=icon_dir / "icon.png")
-            root.iconphoto(True, img)
+        img = tk.PhotoImage(file=icon_dir / "icon.png")
+        root.iconphoto(True, img)
     except Exception:
         pass
 
