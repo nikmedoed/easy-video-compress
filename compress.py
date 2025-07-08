@@ -218,6 +218,8 @@ def open_in_folder(path: Path):
 def run_gui():
     root = TkinterDnD.Tk()
     root.title("Video Compress")
+    root.geometry("900x600")
+    root.minsize(800, 400)
     try:
         if sys.platform.startswith("win"):
             root.iconbitmap(Path(__file__).with_name("icon/icon.ico"))
@@ -260,6 +262,14 @@ def run_gui():
             canvas.pack(side="left", fill="both", expand=True)
             vsb.pack(side="right", fill="y")
             self.canvas = canvas
+            # mouse-wheel scrolling
+            def _on_mousewheel(e):
+                delta = -1 if e.delta < 0 else 1
+                canvas.yview_scroll(delta, "units")
+
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+            canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
 
         def scroll_to(self, widget):
             self.update_idletasks()
@@ -383,8 +393,8 @@ def run_gui():
     def drop(event):
         add_files(root.splitlist(event.data))
 
-    scroll.inner.drop_target_register(DND_FILES)
-    scroll.inner.dnd_bind("<<Drop>>", drop)
+    root.drop_target_register(DND_FILES)
+    root.dnd_bind("<<Drop>>", drop)
 
     def on_double(event):
         widget = event.widget
