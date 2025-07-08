@@ -54,6 +54,10 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
 
 ## Usage
 
+### GUI Mode
+
+Run the script without arguments (or with `--gui`) to open a Qt interface for drag-and-drop compression.
+
 ### 1. CRF-Based Mode (Default)
 
 Compress one or more videos or folders of videos using a CRF factor:
@@ -104,4 +108,5 @@ This installer will also automatically install FFmpeg via `winget` if it is not 
 * **`compress.py`**: Core Python script implementing compression logic.
 * **`compress.bat`**: Windows batch wrapper that calls `compress.py`.
 * **`win_install.ps1`**: PowerShell script to install context-menu hooks and ensure FFmpeg is installed.
-* **`requirements.txt`**: Lists Python dependencies (`rich`).
+* **`requirements.txt`**: Lists Python dependencies (`rich`, `PyQt5`).
+* **`qt_gui.py`**: Implements the optional Qt GUI.

@@ -4,6 +4,8 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from typing import Callable, Optional
+
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
@@ -82,9 +84,51 @@ def run_with_progress(cmd: list[str], duration: float, task, progress: Progress)
     progress.update(task, completed=duration)
 
 
-def compress(path: Path, output: Path, mode: str, crf: int, preset: str, progress: Progress):
+def run_with_callback(cmd: list[str], duration: float, cb: Callable[[float], None]):
+    if duration <= SHORT_THRESHOLD:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        cb(1.0)
+        return
+
+    proc = subprocess.Popen(
+        cmd[:-1] + ["-progress", "pipe:1", "-nostats", cmd[-1]],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    for line in proc.stdout:
+        if line.startswith("out_time_ms="):
+            try:
+                ms = int(line.split("=", 1)[1].strip())
+                cb(min(ms / 1_000_000 / duration, 1.0))
+            except ValueError:
+                pass
+        elif line.startswith("progress=end"):
+            break
+
+    proc.wait()
+    if proc.returncode:
+        raise RuntimeError(f"ffmpeg exited with code {proc.returncode}")
+    cb(1.0)
+
+
+def compress(
+    path: Path,
+    output: Path,
+    mode: str,
+    crf: int,
+    preset: str,
+    progress: Optional[Progress] = None,
+    cb: Optional[Callable[[float], None]] = None,
+):
     dur = get_duration(path)
-    task = progress.add_task(path.name, total=dur)
+    if progress is not None:
+        task = progress.add_task(path.name, total=dur)
+        def updater(v: float):
+            progress.update(task, completed=v)
+    else:
+        task = None
+        updater = cb if cb else lambda v: None
     console.log(f"Starting {mode}: {path.name}")
 
     base = ["ffmpeg", "-y", "-i", str(path)] + COMMON_VARGS
@@ -105,7 +149,10 @@ def compress(path: Path, output: Path, mode: str, crf: int, preset: str, progres
         args = base + ["-vf", f"scale={w2}:{h2}", "-b:v", str(int(vbr))] + SIZE_AARGS + [str(output)]
 
     try:
-        run_with_progress(args, dur, task, progress)
+        if progress is not None:
+            run_with_progress(args, dur, task, progress)
+        else:
+            run_with_callback(args, dur, updater)
         if mode == "size":
             size_mb = output.stat().st_size / (1024 * 1024)
             console.log(f"Completed: {path.name} → {size_mb:.2f} MB")
@@ -117,6 +164,11 @@ def compress(path: Path, output: Path, mode: str, crf: int, preset: str, progres
 
 def main():
     args = sys.argv[1:]
+    if not args or args[0] == "--gui":
+        from qt_gui import main as gui_main
+        gui_main()
+        return
+
     size_mode = args and args[0] == "5"
     if size_mode:
         inputs = args[1:]
@@ -153,7 +205,15 @@ def main():
         console=console,
     ) as prog, ThreadPoolExecutor(max_workers=min(len(tasks), MAX_WORKERS)) as exe:
         futures = [
-            exe.submit(compress, inp, out, "size" if size_mode else "crf", crf, preset, prog)
+            exe.submit(
+                compress,
+                inp,
+                out,
+                "size" if size_mode else "crf",
+                crf,
+                preset,
+                prog,
+            )
             for inp, out in tasks
         ]
         for _ in as_completed(futures):
