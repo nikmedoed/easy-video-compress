@@ -384,10 +384,12 @@ def run_gui():
     def on_click(event):
         row = tree.identify_row(event.y)
         col = tree.identify_column(event.x)
-        if row and col == f"#{columns.index('alt') + 1}":
+        alt_col = f"#{columns.index('alt') + 1}"
+        if row and col == alt_col and tree.set(row, "alt") == "⇆":
             current = info[row]["mode"]
             mode = "crf" if current == "size" else "size"
             add_files([str(info[row]["path"])], mode)
+            tree.set(row, "alt", "OK")
 
     tree.bind("<Button-1>", on_click)
 
