@@ -272,12 +272,8 @@ def run_gui():
     vsb = ttk.Scrollbar(root, orient="vertical")
     vsb.pack(side="right", fill="y")
 
-    auto_scroll = True
-
     def yview(*args):
-        nonlocal auto_scroll
         tree.yview(*args)
-        auto_scroll = False
         place_all()
 
     vsb.config(command=yview)
@@ -290,36 +286,15 @@ def run_gui():
     alts: dict[str, ttk.Button] = {}
     info: dict[str, dict[str, object]] = {}
 
-    last_idx = -1
-    scroll_scheduled = False
-
-    def _do_scroll():
-        nonlocal scroll_scheduled, last_idx
-        scroll_scheduled = False
-        if not auto_scroll:
-            return
-        items = tree.get_children()
-        for it in items:
-            if pbars.get(it) and not info.get(it, {}).get("done") and float(pbars[it]["value"]) < 100:
-                idx = items.index(it)
-                if idx != last_idx:
-                    tree.yview_moveto(idx / len(items))
-                    last_idx = idx
-                break
-
-    def scroll_to_current():
-        nonlocal scroll_scheduled
-        if scroll_scheduled:
-            return
-        scroll_scheduled = True
-        root.after(100, _do_scroll)
-
-    def scroll_to(item):
+    def focus_row_if_first(row):
         children = tree.get_children()
-        if not children:
-            return
-        idx = children.index(item)
-        tree.yview_moveto(idx / len(children))
+        for it in children:
+            if not info[it]["done"] and float(pbars[it]["value"]) < 100:
+                if it == row:
+                    idx = children.index(it)
+                    tree.yview_moveto(idx / len(children))
+                    place_all()
+                break
     total = 0
     done = 0
 
@@ -344,17 +319,21 @@ def run_gui():
         if pbbox:
             x, y, w, h = pbbox
             pbars[item].place(x=x, y=y, width=w, height=h)
+        else:
+            pbars[item].place_forget()
         abbox = tree.bbox(item, "alt")
         if abbox:
             x, y, w, h = abbox
             alts[item].place(x=x, y=y, width=w, height=h)
+        else:
+            alts[item].place_forget()
 
     def place_all():
         for it in pbars:
             place_widget(it)
 
     def add_files(paths, mode_override=None):
-        nonlocal total, auto_scroll
+        nonlocal total
         for p in paths:
             path = Path(p)
             if path.suffix.lower() not in VIDEO_EXTS:
@@ -389,8 +368,6 @@ def run_gui():
             alts[row] = btn_alt
             place_widget(row)
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
-            auto_scroll = True
-            scroll_to_current()
             total += 1
             update_overall()
             executor.submit(process_row, row)
@@ -415,12 +392,11 @@ def run_gui():
     tree.bind("<Double-1>", on_double)
 
     def process_row(row):
-        nonlocal done, auto_scroll
+        nonlocal done
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
-        auto_scroll = True
-        root.after(0, scroll_to_current)
+        root.after(0, lambda r=row: focus_row_if_first(r))
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
@@ -436,7 +412,6 @@ def run_gui():
                 tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
                 info[row]["done"] = True
                 place_widget(row)
-                scroll_to_current()
             root.after(0, finish)
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
@@ -444,16 +419,13 @@ def run_gui():
                 tree.set(row, "result", "error")
                 info[row]["done"] = True
                 place_widget(row)
-                scroll_to_current()
             root.after(0, mark_error)
         finally:
             done += 1
             root.after(0, update_overall)
-            root.after(0, scroll_to_current)
 
     def initial_layout():
         place_all()
-        scroll_to_current()
 
     root.after(100, initial_layout)
     root.mainloop()
