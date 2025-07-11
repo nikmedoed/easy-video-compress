@@ -1,6 +1,6 @@
 @echo off
 pushd "%~dp0"
-python "%~dp0compress.py" "%*"
+python "%~dp0compress.py" %*
 set ec=%ERRORLEVEL%
 popd
 
