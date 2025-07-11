@@ -8,6 +8,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 # Define paths
 $root = Split-Path -Parent $PSCommandPath
 $bat  = Join-Path $root 'compress.bat'
+$gui  = Join-Path $root 'launch_gui.vbs'
 $icon = Join-Path $root 'icon\icon.ico'
 
 if (-not (Test-Path $bat)) {
@@ -109,7 +110,7 @@ if (Test-Path $lnkPath) {
 }
 $shell       = New-Object -ComObject WScript.Shell
 $shortcut    = $shell.CreateShortcut($lnkPath)
-$shortcut.TargetPath = $bat
+$shortcut.TargetPath = $gui
 $shortcut.WorkingDirectory = $root
 if (Test-Path $icon) {
     $shortcut.IconLocation = $icon
@@ -117,6 +118,15 @@ if (Test-Path $icon) {
 $shortcut.Description = 'Launch Video Compress GUI'
 $shortcut.Save()
 Write-Host "✅ Start Menu shortcut created: $lnkPath"
+
+# Pin shortcut to taskbar
+$taskBar = Join-Path $env:APPDATA 'Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar'
+if (-not (Test-Path $taskBar)) {
+    New-Item -ItemType Directory -Path $taskBar -Force | Out-Null
+}
+$taskLnk = Join-Path $taskBar 'Video Compress.lnk'
+Copy-Item -Path $lnkPath -Destination $taskLnk -Force
+Write-Host "✅ Taskbar shortcut created: $taskLnk"
 
 Write-Host "`n🎉 Installation complete! Restart Explorer or open a new window and check context menu:"`
 Write-Host "    Right-click → $label (on videos/folders)"

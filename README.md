@@ -102,11 +102,12 @@ To add a **Compress video (FFmpeg)** entry to the right-click menu:
 
 3. **Right-click** any supported video file or folder and choose **Compress video (FFmpeg)**.
 
-This installer will also automatically install FFmpeg via `winget` if it is not already present. Additionally, a **Video Compress** shortcut will be placed in your Start Menu to launch the drag-and-drop GUI.
+This installer will also automatically install FFmpeg via `winget` if it is not already present. It will create a **Video Compress** shortcut in your Start Menu and pin it to the taskbar for quick access to the drag-and-drop GUI.
 
 ## File Overview
 
 * **`compress.py`**: Core Python script implementing compression logic.
-* **`compress.bat`**: Windows batch wrapper that calls `compress.py`.
-* **`win_install.ps1`**: PowerShell script to install context-menu hooks and ensure FFmpeg is installed.
+* **`compress.bat`**: Windows batch wrapper for console mode.
+* **`launch_gui.vbs`**: Script to start the GUI without a console window.
+* **`win_install.ps1`**: PowerShell script to install context-menu hooks, ensure FFmpeg is installed, and create Start Menu/taskbar shortcuts.
 * **`requirements.txt`**: Lists Python dependencies (`rich`, `tkinterdnd2`).
