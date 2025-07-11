@@ -24,6 +24,6 @@ exit /b 0
 :launch_gui
 set "PY_CMD=pythonw"
 where pyw >nul 2>&1 && set "PY_CMD=pyw"
-start "" "%PY_CMD%" "%~dp0compress.py" %*
+"%PY_CMD%" "%~dp0compress.py" %*
 popd
 exit /b 0
