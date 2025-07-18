@@ -9,6 +9,8 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+
+CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 import time
 import tkinter as tk
 from tkinter import ttk, filedialog, BooleanVar
@@ -47,7 +49,10 @@ def get_duration(path: Path) -> float:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-        stdout=subprocess.PIPE, text=True, check=True
+        stdout=subprocess.PIPE,
+        text=True,
+        check=True,
+        creationflags=CREATE_NO_WINDOW,
     ).stdout.strip()
     try:
         return float(out)
@@ -60,7 +65,10 @@ def probe_video(path: Path) -> tuple[int, int]:
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height",
          "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-        stdout=subprocess.PIPE, text=True, check=True
+        stdout=subprocess.PIPE,
+        text=True,
+        check=True,
+        creationflags=CREATE_NO_WINDOW,
     ).stdout.strip().splitlines()
     w, h = map(int, out)
     return w, h
@@ -81,13 +89,22 @@ def find_all_videos(inputs: list[str]) -> list[Path]:
 
 def run_with_progress(cmd: list[str], duration: float, task, progress: Progress):
     if duration <= SHORT_THRESHOLD:
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            creationflags=CREATE_NO_WINDOW,
+        )
         progress.update(task, completed=duration)
         return
 
     proc = subprocess.Popen(
         cmd[:-1] + ["-progress", "pipe:1", "-nostats", cmd[-1]],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        creationflags=CREATE_NO_WINDOW,
     )
     for line in proc.stdout:
         if line.startswith("out_time_ms="):
@@ -156,6 +173,7 @@ def get_video_info(path: Path) -> tuple[float, str, int]:
         stdout=subprocess.PIPE,
         text=True,
         check=True,
+        creationflags=CREATE_NO_WINDOW,
     ).stdout.strip().splitlines()
     codec = out[0] if out else ""
     try:
@@ -167,7 +185,13 @@ def get_video_info(path: Path) -> tuple[float, str, int]:
 
 def run_ffmpeg_gui(cmd: list[str], duration: float, update):
     if duration <= SHORT_THRESHOLD:
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            creationflags=CREATE_NO_WINDOW,
+        )
         update(duration)
         return
 
@@ -176,6 +200,7 @@ def run_ffmpeg_gui(cmd: list[str], duration: float, update):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        creationflags=CREATE_NO_WINDOW,
     )
     for line in proc.stdout:
         if line.startswith("out_time_ms="):
@@ -240,9 +265,9 @@ def open_in_folder(path: Path):
     if sys.platform.startswith("win"):
         os.startfile(folder)
     elif sys.platform == "darwin":
-        subprocess.Popen(["open", folder])
+        subprocess.Popen(["open", folder], creationflags=CREATE_NO_WINDOW)
     else:
-        subprocess.Popen(["xdg-open", folder])
+        subprocess.Popen(["xdg-open", folder], creationflags=CREATE_NO_WINDOW)
 
 
 def run_gui():
