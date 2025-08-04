@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import subprocess
 import sys
@@ -12,9 +13,10 @@ from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
 CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 import time
-import tkinter as tk
-from tkinter import ttk, filedialog, BooleanVar
-from tkinterdnd2 import DND_FILES, TkinterDnD
+if len(sys.argv)<2:
+    import tkinter as tk
+    from tkinter import ttk, filedialog, BooleanVar
+    from tkinterdnd2 import DND_FILES, TkinterDnD
 
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
 SHORT_THRESHOLD = 2.0

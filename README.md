@@ -53,6 +53,30 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
    winget install --exact --id FFmpeg.FFmpeg -e
    ```
 
+### Setup bash / zsh
+
+```shell
+chmod +x compress.py 
+sudo ln -sf /pathToScript/compress.py /usr/local/bin/compress
+```
+
+### Windows Context Menu & PowerShell Integration
+
+To add a **Compress video (FFmpeg)** entry to the right-click menu:
+
+1. **Run** the PowerShell installer as Administrator:
+
+   ```powershell
+   .\win_install.ps1
+   ```
+
+2. **Restart** Windows Explorer or open a new File Explorer window.
+
+3. **Right-click** any supported video file or folder and choose **Compress video (FFmpeg)**.
+
+This installer will also automatically install FFmpeg via `winget` if it is not already present. It will create a **Video Compress** shortcut in your Start Menu and pin it to the taskbar for quick access to the drag-and-drop GUI.
+
+
 ## Usage
 
 ### 1. CRF-Based Mode (Default)
@@ -87,22 +111,6 @@ The script will calculate the required video bitrate and downscale resolution as
 ### 3. GUI Mode
 
 Launch the script without any arguments (or pass `--gui`) to open a drag-and-drop interface. Drop multiple videos onto the window or use the **Add Videos** button. Conversion begins immediately in parallel threads, and each row displays progress in percent. A bar at the bottom shows overall progress. Use the 5 MB toggle to switch between size and CRF compression modes.
-
-## Windows Context Menu & PowerShell Integration
-
-To add a **Compress video (FFmpeg)** entry to the right-click menu:
-
-1. **Run** the PowerShell installer as Administrator:
-
-   ```powershell
-   .\win_install.ps1
-   ```
-
-2. **Restart** Windows Explorer or open a new File Explorer window.
-
-3. **Right-click** any supported video file or folder and choose **Compress video (FFmpeg)**.
-
-This installer will also automatically install FFmpeg via `winget` if it is not already present. It will create a **Video Compress** shortcut in your Start Menu and pin it to the taskbar for quick access to the drag-and-drop GUI.
 
 ## File Overview
 
