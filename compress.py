@@ -124,6 +124,7 @@ def run_with_progress(cmd: list[str], duration: float, task, progress: Progress)
         stderr=subprocess.STDOUT,
         text=True,
         creationflags=CREATE_NO_WINDOW,
+        bufsize=1,
     )
     for line in proc.stdout:
         if line.startswith("out_time_ms="):
@@ -220,6 +221,7 @@ def run_ffmpeg_gui(cmd: list[str], duration: float, update):
         stderr=subprocess.STDOUT,
         text=True,
         creationflags=CREATE_NO_WINDOW,
+        bufsize=1,
     )
     for line in proc.stdout:
         if line.startswith("out_time_ms="):
@@ -463,6 +465,8 @@ def run_gui():
 
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
+    gui_queue: "queue.Queue[tuple]" = queue.Queue()
+
     def update_overall():
         if total:
             overall_bar["value"] = done * 100 / total
@@ -470,6 +474,49 @@ def run_gui():
         else:
             overall_bar["value"] = 0
             overall_label.config(text="0/0")
+        root.update_idletasks()
+
+    def process_gui_queue():
+        nonlocal done
+        try:
+            while True:
+                msg = gui_queue.get_nowait()
+                kind = msg[0]
+                if kind == "begin":
+                    row = msg[1]
+                    tree.item(row, tags=("in_progress",))
+                    tree.update_idletasks()
+                    scroll_to_current()
+                elif kind == "progress":
+                    row, p = msg[1], msg[2]
+                    progress_vals[row] = p
+                    tree.set(row, "progress", progress_bar_text(p))
+                    tree.item(row, tags=("completed",) if p >= 100 else ("in_progress",))
+                    tree.update_idletasks()
+                elif kind == "finish":
+                    row, size_mb = msg[1], msg[2]
+                    progress_vals[row] = 100
+                    tree.set(row, "progress", progress_bar_text(100))
+                    tree.item(row, tags=("completed",))
+                    tree.set(row, "result", f"{size_mb:.1f} MB")
+                    info[row]["done"] = True
+                    tree.update_idletasks()
+                    scroll_to_current()
+                    done += 1
+                    update_overall()
+                elif kind == "error":
+                    row = msg[1]
+                    tree.set(row, "result", "error")
+                    progress_vals[row] = 0
+                    info[row]["done"] = True
+                    tree.item(row, tags=("error",))
+                    tree.update_idletasks()
+                    scroll_to_current()
+                    done += 1
+                    update_overall()
+        except queue.Empty:
+            pass
+        root.after(100, process_gui_queue)
 
 
     def add_files(paths, mode_override=None):
@@ -499,10 +546,12 @@ def run_gui():
             tree.item(row, tags=("waiting",))
             progress_vals[row] = 0.0
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
+            tree.update_idletasks()
             scroll_to_current()
             total += 1
             update_overall()
             executor.submit(process_row, row)
+        root.update_idletasks()
 
     def select_files():
         files = filedialog.askopenfilenames(filetypes=[("Videos", "*.mp4 *.mkv *.avi *.mov *.flv *.wmv *.webm")])
@@ -538,49 +587,29 @@ def run_gui():
     tree.bind("<Double-1>", on_double)
 
     def process_row(row):
-        nonlocal done, auto_scroll
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
-        root.after(0, scroll_to_current)
-        tree.item(row, tags=("in_progress",))
+
+        gui_queue.put(("begin", row))
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
-            def do_update(p=percent):
-                progress_vals[row] = p
-                tree.set(row, "progress", progress_bar_text(p))
-                tree.item(row, tags=("completed",) if p >= 100 else ("in_progress",))
-            root.after(0, do_update)
+            gui_queue.put(("progress", row, percent))
 
         try:
             compress_gui(path, out, mode, update)
-            def finish():
-                progress_vals[row] = 100
-                tree.set(row, "progress", progress_bar_text(100))
-                tree.item(row, tags=("completed",))
-                tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
-                info[row]["done"] = True
-                scroll_to_current()
-            root.after(0, finish)
+            size_mb = out.stat().st_size / (1024 * 1024)
+            gui_queue.put(("finish", row, size_mb))
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
-            def mark_error():
-                tree.set(row, "result", "error")
-                progress_vals[row] = 0
-                info[row]["done"] = True
-                tree.item(row, tags=("error",))
-                scroll_to_current()
-            root.after(0, mark_error)
-        finally:
-            done += 1
-            root.after(0, update_overall)
-            root.after(0, scroll_to_current)
+            gui_queue.put(("error", row))
 
     def initial_layout():
         scroll_to_current()
 
     root.after(100, initial_layout)
+    root.after(100, process_gui_queue)
     root.after(1000, check_idle)
     root.mainloop()
 
