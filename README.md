@@ -53,6 +53,30 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
    winget install --exact --id FFmpeg.FFmpeg -e
    ```
 
+### macOS: TkinterDnD2 setup
+
+Drag-and-drop support on macOS requires the native TkDND library. Install the Python wrapper and place the appropriate binary in the folder used by `tkinterdnd2`:
+
+1. Install the wrapper:
+   ```bash
+   pip install tkinterdnd2
+   ```
+2. Download the [TkDND 2.9.5 macOS archive](https://github.com/petasis/tkdnd/releases/tag/tkdnd-release-test-v2.9.5) that matches your CPU (`arm64` or `x86_64`).
+3. Extract it and copy the `tkdnd2.9` folder into `.../site-packages/tkinterdnd2/tkdnd/osx-arm64/` (or `osx-x64/`). For a pyenv install of Python 3.13.5:
+   ```bash
+   cp -R tkdnd2.9.5 ~/.pyenv/versions/3.13.5/lib/python3.13/site-packages/tkinterdnd2/tkdnd/osx-arm64
+   ```
+4. Verify that TkDND loads:
+   ```bash
+   python - <<'PY'
+   from tkinterdnd2 import TkinterDnD
+   root = TkinterDnD.Tk()
+   print('tkdnd version:', root.TkdndVersion)
+   PY
+   ```
+
+   For a step-by-step walkthrough, see [this Stack Overflow answer](https://stackoverflow.com/a/79727593/11246533).
+
 ### Setup bash / zsh
 
 ```shell
