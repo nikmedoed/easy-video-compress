@@ -547,9 +547,11 @@ def run_gui():
         path = info[row]["path"]
         mode = info[row]["mode"]
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
-        root.after(0, scroll_to_current)
-        tree.item(row, tags=("in_progress",))
-        tree.update_idletasks()
+        def begin():
+            tree.item(row, tags=("in_progress",))
+            tree.update_idletasks()
+            scroll_to_current()
+        root.after(0, begin)
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
