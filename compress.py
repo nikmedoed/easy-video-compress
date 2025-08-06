@@ -28,7 +28,24 @@ COMMON_VARGS = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "faststar
 COMMON_AARGS = ["-c:a", "aac", "-b:a", "128k"]
 SIZE_AARGS = ["-c:a", "aac", "-b:a", str(AUDIO_BR)]
 
-console = Console(log_time=True, log_path=False)
+console = Console(log_time=True, log_path=False, force_terminal=True)
+
+
+def is_dark_mode() -> bool:
+    """Return True if the system appears to be using a dark theme."""
+    if sys.platform == "darwin":
+        try:
+            out = subprocess.run(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            return out.stdout.strip().lower() == "dark"
+        except Exception:
+            return False
+    return False
 
 
 def ensure_icon_ico() -> Path:
@@ -294,6 +311,31 @@ def run_gui():
         pass
 
     style = ttk.Style(root)
+    dark = is_dark_mode()
+    if dark:
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#333333",
+            fieldbackground="#333333",
+            foreground="white",
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", "#446688")],
+            foreground=[("selected", "white")],
+        )
+        fg = "white"
+        waiting_bg = "#333333"
+        prog_bg = "#454545"
+        completed_bg = "#355e35"
+        error_bg = "#553333"
+    else:
+        fg = "black"
+        waiting_bg = "white"
+        prog_bg = "#ffe5b4"
+        completed_bg = "#d4f7d4"
+        error_bg = "#f7d4d4"
 
     top = ttk.Frame(root)
     top.pack(fill="x")
@@ -317,10 +359,10 @@ def run_gui():
         "progress",
     )
     tree = ttk.Treeview(root, columns=columns, show="headings")
-    tree.tag_configure("waiting", background="white")
-    tree.tag_configure("in_progress", background="#ffe5b4")
-    tree.tag_configure("completed", background="#d4f7d4")
-    tree.tag_configure("error", background="#f7d4d4")
+    tree.tag_configure("waiting", background=waiting_bg, foreground=fg)
+    tree.tag_configure("in_progress", background=prog_bg, foreground=fg)
+    tree.tag_configure("completed", background=completed_bg, foreground=fg)
+    tree.tag_configure("error", background=error_bg, foreground=fg)
     widths = {
         "file": 200,
         "codec": 70,
