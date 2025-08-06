@@ -28,12 +28,7 @@ COMMON_VARGS = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "faststar
 COMMON_AARGS = ["-c:a", "aac", "-b:a", "128k"]
 SIZE_AARGS = ["-c:a", "aac", "-b:a", str(AUDIO_BR)]
 
-console = Console(
-    log_time=True,
-    log_path=False,
-    force_terminal=True,
-    force_interactive=True,
-)
+console = Console(log_time=True, log_path=False, force_terminal=True)
 
 
 def is_dark_mode() -> bool:
@@ -128,7 +123,6 @@ def run_with_progress(cmd: list[str], duration: float, task, progress: Progress)
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        bufsize=1,
         creationflags=CREATE_NO_WINDOW,
     )
     for line in proc.stdout:
@@ -225,7 +219,6 @@ def run_ffmpeg_gui(cmd: list[str], duration: float, update):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        bufsize=1,
         creationflags=CREATE_NO_WINDOW,
     )
     for line in proc.stdout:
@@ -504,7 +497,6 @@ def run_gui():
                 ),
             )
             tree.item(row, tags=("waiting",))
-            tree.update_idletasks()
             progress_vals[row] = 0.0
             info[row] = {"path": path, "duration": dur, "mode": mode, "done": False}
             scroll_to_current()
@@ -552,7 +544,6 @@ def run_gui():
         out = path.with_name(f"{path.stem}_smaller.mp4" if mode == "size" else f"{path.stem}_compressed.mp4")
         root.after(0, scroll_to_current)
         tree.item(row, tags=("in_progress",))
-        tree.update_idletasks()
 
         def update(sec):
             percent = min(100, sec * 100 / info[row]["duration"])
@@ -560,7 +551,6 @@ def run_gui():
                 progress_vals[row] = p
                 tree.set(row, "progress", progress_bar_text(p))
                 tree.item(row, tags=("completed",) if p >= 100 else ("in_progress",))
-                tree.update_idletasks()
             root.after(0, do_update)
 
         try:
@@ -572,7 +562,6 @@ def run_gui():
                 tree.set(row, "result", f"{out.stat().st_size / (1024*1024):.1f} MB")
                 info[row]["done"] = True
                 scroll_to_current()
-                tree.update_idletasks()
             root.after(0, finish)
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
@@ -582,7 +571,6 @@ def run_gui():
                 info[row]["done"] = True
                 tree.item(row, tags=("error",))
                 scroll_to_current()
-                tree.update_idletasks()
             root.after(0, mark_error)
         finally:
             done += 1
