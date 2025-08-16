@@ -13,7 +13,7 @@ from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
 CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 import time
-if len(sys.argv)<2:
+if len(sys.argv) < 2 or sys.argv[1] in {"--gui", "gui"}:
     import tkinter as tk
     from tkinter import ttk, filedialog, BooleanVar
     from tkinterdnd2 import DND_FILES, TkinterDnD
