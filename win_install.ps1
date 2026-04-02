@@ -1,54 +1,156 @@
-# Elevate to admin if needed
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
-    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Start-Process pwsh -Verb RunAs -ArgumentList "-NoProfile","-ExecutionPolicy Bypass","-File `"$PSCommandPath`""
-    exit
+$ErrorActionPreference = 'Stop'
+
+function Write-Step {
+    param([string]$Message)
+    Write-Host ""
+    Write-Host "==> $Message"
 }
 
-# Define paths
+function Test-CommandExists {
+    param([string]$Name)
+    return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function New-Shortcut {
+    param(
+        [Parameter(Mandatory = $true)][string]$ShortcutPath,
+        [Parameter(Mandatory = $true)][string]$TargetPath,
+        [string]$Arguments = '',
+        [string]$WorkingDirectory = '',
+        [string]$IconLocation = '',
+        [string]$Description = ''
+    )
+
+    $shortcutDir = Split-Path -Parent $ShortcutPath
+    if (-not (Test-Path -LiteralPath $shortcutDir)) {
+        New-Item -ItemType Directory -Path $shortcutDir -Force | Out-Null
+    }
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    $shortcut.TargetPath = $TargetPath
+    if ($Arguments) {
+        $shortcut.Arguments = $Arguments
+    }
+    if ($WorkingDirectory) {
+        $shortcut.WorkingDirectory = $WorkingDirectory
+    }
+    if ($IconLocation) {
+        $shortcut.IconLocation = $IconLocation
+    }
+    if ($Description) {
+        $shortcut.Description = $Description
+    }
+    $shortcut.Save()
+}
+
+function Ensure-Venv {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$RequirementsPath
+    )
+
+    $venvPython = Join-Path $Root '.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $venvPython)) {
+        if (Test-CommandExists 'py') {
+            Write-Step 'Creating local virtual environment (.venv) via py -3'
+            & py -3 -m venv (Join-Path $Root '.venv')
+        } elseif (Test-CommandExists 'python') {
+            Write-Step 'Creating local virtual environment (.venv) via python'
+            & python -m venv (Join-Path $Root '.venv')
+        } else {
+            throw 'Python launcher was not found. Install Python 3 and rerun this installer.'
+        }
+    } else {
+        Write-Step 'Using existing local virtual environment (.venv)'
+    }
+
+    if (-not (Test-Path -LiteralPath $venvPython)) {
+        throw "Virtual environment Python was not created: $venvPython"
+    }
+
+    Write-Step 'Ensuring pip is available in .venv'
+    & $venvPython -m ensurepip --upgrade | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to bootstrap pip in $venvPython"
+    }
+
+    Write-Step 'Installing Python dependencies into .venv'
+    & $venvPython -m pip install --upgrade pip | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to upgrade pip in $venvPython"
+    }
+    & $venvPython -m pip install -r $RequirementsPath | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install dependencies from $RequirementsPath"
+    }
+
+    return $venvPython
+}
+
 $root = Split-Path -Parent $PSCommandPath
-$bat  = Join-Path $root 'compress.bat'
-$gui  = Join-Path $root 'launch_gui.vbs'
+$bat = Join-Path $root 'compress.bat'
+$gui = Join-Path $root 'launch_gui.vbs'
 $icon = Join-Path $root 'icon\icon.ico'
+$iconLocationShortcut = if (Test-Path -LiteralPath $icon) { '{0},0' -f $icon } else { '' }
+$iconLocationRegistry = if (Test-Path -LiteralPath $icon) { '"{0}",0' -f $icon } else { '' }
+$compressPy = Join-Path $root 'compress.py'
+$requirements = Join-Path $root 'requirements.txt'
+$venvPython = $null
 
-if (-not (Test-Path $bat)) {
-    Write-Error "❌ compress.bat not found in $root`nPlace your launcher here and run again."
-    exit 1
+foreach ($path in @($bat, $gui, $compressPy, $requirements)) {
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "Required file not found: $path"
+    }
 }
 
-# Remove old context-menu keys
+Write-Step 'Preparing local Python environment'
+$venvPython = Ensure-Venv -Root $root -RequirementsPath $requirements
+
+Write-Step 'Refreshing Windows icon assets'
+@"
+from pathlib import Path
+import importlib.util
+
+module_path = Path(r"$compressPy")
+spec = importlib.util.spec_from_file_location("compress_module", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.ensure_icon_ico()
+"@ | & $venvPython -
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'Could not prebuild icon assets from compress.py. The app will try again on launch.'
+}
+
+Write-Step 'Refreshing old context-menu entries'
 $oldKeys = @(
     'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo',
     'HKCU:\Software\Classes\Directory\shell\CompressVideo'
 )
-$exts = '.mp4','.mkv','.avi','.mov','.flv','.wmv','.webm'
-foreach ($e in $exts) {
-    $oldKeys += "HKCU:\Software\Classes\SystemFileAssociations\$e\shell\CompressVideo"
+
+$exts = '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm'
+
+foreach ($ext in $exts) {
+    $oldKeys += "HKCU:\Software\Classes\SystemFileAssociations\$ext\shell\CompressVideo"
 }
+
 foreach ($key in $oldKeys) {
-    if (Test-Path $key) {
-        Remove-Item $key -Recurse -Force
+    if (Test-Path -LiteralPath $key) {
+        Remove-Item -LiteralPath $key -Recurse -Force
     }
 }
 
-# Create unified context-menu entry
+Write-Step 'Creating Explorer context-menu entry'
 $baseKey = 'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo'
 New-Item -Path $baseKey -Force | Out-Null
 
-# Set menu label based on UI culture
-if ([System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq 'ru') {
-    $label = 'Сжать видео (FFmpeg)'
-} else {
-    $label = 'Compress video (FFmpeg)'
-}
+$label = 'Compress video (FFmpeg)'
 Set-ItemProperty -Path $baseKey -Name '(Default)' -Value $label
 
-# Set icon if available
-if (Test-Path $icon) {
-    Set-ItemProperty -Path $baseKey -Name 'Icon' -Value $icon
+if (Test-Path -LiteralPath $icon) {
+    Set-ItemProperty -Path $baseKey -Name 'Icon' -Value $iconLocationRegistry
 }
 
-# Filter for folders and video file types
 $filter = @(
     'System.ItemType:=Directory',
     'System.FileExtension:=.mp4',
@@ -59,74 +161,78 @@ $filter = @(
     'System.FileExtension:=.wmv',
     'System.FileExtension:=.webm'
 ) -join ' OR '
-Set-ItemProperty -Path $baseKey -Name 'AppliesTo' -Value $filter
 
-# Single window for multiple selections
+Set-ItemProperty -Path $baseKey -Name 'AppliesTo' -Value $filter
 Set-ItemProperty -Path $baseKey -Name 'MultiSelectModel' -Value 'Player'
 
-# Define the command to run
-$cmdKey = "$baseKey\command"
+$cmdKey = Join-Path $baseKey 'command'
 New-Item -Path $cmdKey -Force | Out-Null
-$command = "cmd.exe /c `"$bat`" %V"
+$command = 'cmd.exe /c ""{0}" %V"' -f $bat
 Set-ItemProperty -Path $cmdKey -Name '(Default)' -Value $command
 
-# Install ffmpeg via winget if missing
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-    Write-Host '⏳ Installing ffmpeg via winget…'
-    Start-Process winget -ArgumentList 'install --exact --id FFmpeg.FFmpeg -e --source winget' `
-        -NoNewWindow -Wait
-    if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
-        Write-Host '✅ ffmpeg installed.'
+Write-Step 'Checking ffmpeg'
+if (-not (Test-CommandExists 'ffmpeg')) {
+    if (Test-CommandExists 'winget') {
+        Write-Host 'ffmpeg was not found. Installing via winget for the current user...'
+        & winget install --exact --id FFmpeg.FFmpeg -e --source winget --scope user | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'winget could not install ffmpeg automatically. Install ffmpeg manually and ensure it is in PATH.'
+        }
     } else {
-        Write-Warning '⚠️ Could not install ffmpeg via winget. Please install manually.'
+        Write-Warning 'ffmpeg was not found and winget is unavailable. Install ffmpeg manually and ensure it is in PATH.'
     }
 } else {
-    Write-Host 'ℹ️ ffmpeg is already installed.'
+    Write-Host 'ffmpeg is already available in PATH.'
 }
 
-# Add compress function to PowerShell profile if not present
-$profilePath = $PROFILE
-if (-not (Test-Path -Path $profilePath)) {
+Write-Step 'Adding PowerShell helper function'
+$profilePath = $PROFILE.CurrentUserCurrentHost
+$profileDir = Split-Path -Parent $profilePath
+
+if (-not (Test-Path -LiteralPath $profileDir)) {
+    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+}
+if (-not (Test-Path -LiteralPath $profilePath)) {
     New-Item -ItemType File -Path $profilePath -Force | Out-Null
 }
-$profileText = Get-Content -Path $profilePath -Raw
-if ($profileText -notmatch 'function\s+compress') {
+
+$profileText = Get-Content -LiteralPath $profilePath -Raw -ErrorAction SilentlyContinue
+if ($null -eq $profileText) {
+    $profileText = ''
+}
+
+if ($profileText -notmatch 'function\s+compress\b') {
     $functionDef = @"
 function compress {
-    & 'python' 'D:\System\toPath\compress\compress.py' @Args
+    & '$bat' @Args
 }
 "@
-    Add-Content -Path $profilePath -Value $functionDef
-    Write-Host "✅ Added 'compress' function to your PowerShell profile at $profilePath"
+    Add-Content -LiteralPath $profilePath -Value $functionDef
+    Write-Host "Added 'compress' function to $profilePath"
 } else {
-    Write-Host "ℹ️ 'compress' function already exists in your PowerShell profile."
+    Write-Host "'compress' function already exists in $profilePath"
 }
 
-# Create Start Menu shortcut for GUI
-$startMenu   = [Environment]::GetFolderPath('Programs')
-$lnkPath     = Join-Path $startMenu 'Video Compress.lnk'
-if (Test-Path $lnkPath) {
-    Remove-Item $lnkPath -Force
-}
-$shell       = New-Object -ComObject WScript.Shell
-$shortcut    = $shell.CreateShortcut($lnkPath)
-$shortcut.TargetPath = $gui
-$shortcut.WorkingDirectory = $root
-if (Test-Path $icon) {
-    $shortcut.IconLocation = $icon
-}
-$shortcut.Description = 'Launch Video Compress GUI'
-$shortcut.Save()
-Write-Host "✅ Start Menu shortcut created: $lnkPath"
+Write-Step 'Creating shortcuts'
+$venvPythonw = Join-Path $root '.venv\Scripts\pythonw.exe'
+$shortcutTarget = if (Test-Path -LiteralPath $venvPythonw) { $venvPythonw } else { $venvPython }
+$shortcutArgs = ('"{0}" --gui' -f $compressPy)
 
-# Pin shortcut to taskbar
-$taskBar = Join-Path $env:APPDATA 'Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar'
-if (-not (Test-Path $taskBar)) {
-    New-Item -ItemType Directory -Path $taskBar -Force | Out-Null
-}
-$taskLnk = Join-Path $taskBar 'Video Compress.lnk'
-Copy-Item -Path $lnkPath -Destination $taskLnk -Force
-Write-Host "✅ Taskbar shortcut created: $taskLnk"
+$startMenu = [Environment]::GetFolderPath('Programs')
+$startMenuShortcut = Join-Path $startMenu 'Video Compress.lnk'
+New-Shortcut `
+    -ShortcutPath $startMenuShortcut `
+    -TargetPath $shortcutTarget `
+    -Arguments $shortcutArgs `
+    -WorkingDirectory $root `
+    -IconLocation $iconLocationShortcut `
+    -Description 'Launch Video Compress GUI'
+Write-Host "Shortcut created: $startMenuShortcut"
 
-Write-Host "`n🎉 Installation complete! Restart Explorer or open a new window and check context menu:"`
-Write-Host "    Right-click → $label (on videos/folders)"
+Write-Host ""
+Write-Host 'Installation complete.'
+Write-Host "App root: $root"
+Write-Host "Python env: $venvPython"
+Write-Host "Explorer menu: Right-click supported videos or folders -> $label"
+Write-Host 'Shortcut created in Start Menu.'
+Write-Host 'If you want it pinned to the taskbar, open the shortcut once and choose "Pin to taskbar" from Start.'
