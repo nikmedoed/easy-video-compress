@@ -121,7 +121,29 @@ def find_all_videos(inputs: list[str]) -> list[Path]:
     return videos
 
 
-def run_with_progress(cmd: list[str], duration: float, task, progress: Progress):
+def parse_ffmpeg_progress_seconds(line: str) -> float | None:
+    line = line.strip()
+    if not line:
+        return None
+
+    for key in ("out_time_ms=", "out_time_us="):
+        if line.startswith(key):
+            try:
+                return int(line.split("=", 1)[1].strip()) / 1_000_000
+            except ValueError:
+                return None
+
+    if line.startswith("out_time="):
+        try:
+            h, m, s = line.split("=", 1)[1].strip().split(":")
+            return int(h) * 3600 + int(m) * 60 + float(s)
+        except ValueError:
+            return None
+
+    return None
+
+
+def run_ffmpeg_with_progress(cmd: list[str], duration: float, update):
     if duration <= SHORT_THRESHOLD:
         subprocess.run(
             cmd,
@@ -130,31 +152,35 @@ def run_with_progress(cmd: list[str], duration: float, task, progress: Progress)
             check=True,
             creationflags=CREATE_NO_WINDOW,
         )
-        progress.update(task, completed=duration)
+        update(duration)
         return
 
     proc = subprocess.Popen(
         cmd[:-1] + ["-progress", "pipe:1", "-nostats", cmd[-1]],
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.DEVNULL,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         creationflags=CREATE_NO_WINDOW,
         bufsize=1,
     )
-    for line in proc.stdout:
-        if line.startswith("out_time_ms="):
-            try:
-                ms = int(line.split("=", 1)[1].strip())
-                progress.update(task, completed=ms / 1_000_000)
-            except ValueError:
-                pass
-        elif line.startswith("progress=end"):
-            break
+    if proc.stdout is not None:
+        for line in proc.stdout:
+            sec = parse_ffmpeg_progress_seconds(line)
+            if sec is not None:
+                update(sec)
+            elif line.strip() == "progress=end":
+                break
 
     proc.wait()
     if proc.returncode:
         raise RuntimeError(f"ffmpeg exited with code {proc.returncode}")
-    progress.update(task, completed=duration)
+    update(duration)
+
+
+def run_with_progress(cmd: list[str], duration: float, task, progress: Progress):
+    run_ffmpeg_with_progress(cmd, duration, lambda sec: progress.update(task, completed=sec))
 
 
 def compress(path: Path, output: Path, mode: str, crf: int, preset: str, progress: Progress):
@@ -219,39 +245,7 @@ def get_video_info(path: Path) -> tuple[float, str, int]:
 
 
 def run_ffmpeg_gui(cmd: list[str], duration: float, update):
-    if duration <= SHORT_THRESHOLD:
-        subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        update(duration)
-        return
-
-    proc = subprocess.Popen(
-        cmd[:-1] + ["-progress", "pipe:1", "-nostats", cmd[-1]],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        creationflags=CREATE_NO_WINDOW,
-        bufsize=1,
-    )
-    for line in proc.stdout:
-        if line.startswith("out_time_ms="):
-            try:
-                ms = int(line.split("=", 1)[1].strip())
-                update(ms / 1_000_000)
-            except ValueError:
-                pass
-        elif line.startswith("progress=end"):
-            break
-
-    proc.wait()
-    if proc.returncode:
-        raise RuntimeError(f"ffmpeg exited with code {proc.returncode}")
-    update(duration)
+    run_ffmpeg_with_progress(cmd, duration, update)
 
 
 def compress_gui(path: Path, output: Path, mode: str, update):
@@ -610,7 +604,10 @@ def run_gui():
         gui_queue.put(("begin", row))
 
         def update(sec):
-            percent = min(100, sec * 100 / info[row]["duration"])
+            duration = info[row]["duration"]
+            if duration <= 0:
+                return
+            percent = min(100, sec * 100 / duration)
             gui_queue.put(("progress", row, percent))
 
         try:
