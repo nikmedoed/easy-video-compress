@@ -128,7 +128,9 @@ $oldKeys = @(
     'HKCU:\Software\Classes\Directory\shell\CompressVideo'
 )
 
-$exts = '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm'
+$exts = '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm',
+    '.jpg', '.jpeg', '.jfif', '.png', '.bmp', '.tif', '.tiff', '.webp',
+    '.heic', '.heif', '.avif'
 
 foreach ($ext in $exts) {
     $oldKeys += "HKCU:\Software\Classes\SystemFileAssociations\$ext\shell\CompressVideo"
@@ -144,7 +146,7 @@ Write-Step 'Creating Explorer context-menu entry'
 $baseKey = 'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo'
 New-Item -Path $baseKey -Force | Out-Null
 
-$label = 'Compress video (FFmpeg)'
+$label = 'Compress media'
 Set-ItemProperty -Path $baseKey -Name '(Default)' -Value $label
 
 if (Test-Path -LiteralPath $icon) {
@@ -159,7 +161,18 @@ $filter = @(
     'System.FileExtension:=.mov',
     'System.FileExtension:=.flv',
     'System.FileExtension:=.wmv',
-    'System.FileExtension:=.webm'
+    'System.FileExtension:=.webm',
+    'System.FileExtension:=.jpg',
+    'System.FileExtension:=.jpeg',
+    'System.FileExtension:=.jfif',
+    'System.FileExtension:=.png',
+    'System.FileExtension:=.bmp',
+    'System.FileExtension:=.tif',
+    'System.FileExtension:=.tiff',
+    'System.FileExtension:=.webp',
+    'System.FileExtension:=.heic',
+    'System.FileExtension:=.heif',
+    'System.FileExtension:=.avif'
 ) -join ' OR '
 
 Set-ItemProperty -Path $baseKey -Name 'AppliesTo' -Value $filter
@@ -219,14 +232,14 @@ $shortcutTarget = if (Test-Path -LiteralPath $venvPythonw) { $venvPythonw } else
 $shortcutArgs = ('"{0}" --gui' -f $compressPy)
 
 $startMenu = [Environment]::GetFolderPath('Programs')
-$startMenuShortcut = Join-Path $startMenu 'Video Compress.lnk'
+$startMenuShortcut = Join-Path $startMenu 'Media Compress.lnk'
 New-Shortcut `
     -ShortcutPath $startMenuShortcut `
     -TargetPath $shortcutTarget `
     -Arguments $shortcutArgs `
     -WorkingDirectory $root `
     -IconLocation $iconLocationShortcut `
-    -Description 'Launch Video Compress GUI'
+    -Description 'Launch Media Compress GUI'
 Write-Host "Shortcut created: $startMenuShortcut"
 
 Write-Host ""

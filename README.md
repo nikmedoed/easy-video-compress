@@ -1,35 +1,109 @@
-# Video Compression Script
+# Media Compression Tool
 
-A simple, multithreaded Python tool for compressing videos using FFmpeg, with optional Windows context-menu integration.
+A cross-platform, multithreaded Python tool for compressing videos with FFmpeg
+and converting photos with Pillow. It works on Windows, macOS, and Linux. The
+Windows context menu is optional; the CLI and GUI are intended to work on every
+supported system.
+
+It supports mixed batches, a drag-and-drop GUI, HEIC photos from Samsung phones
+via `pillow-heif`, and two photo conversion modes: visually compressed output
+and high-quality conversion close to the original.
 
 ## Motivation
 
-Initially, I discovered [rotato](https://tools.rotato.app/compress), which provided a great in-browser tool for compressing screen recordings. It worked efficiently, but I had to upload videos one by one and rely on the web interface. Later, they released a desktop version — but at a steep price. That didn't appeal to me.
+Initially, I discovered [rotato](https://tools.rotato.app/compress), which
+provided a great in-browser tool for compressing screen recordings. It worked
+efficiently, but I had to upload videos one by one and rely on the web
+interface. Later, they released a desktop version — but at a steep price. That
+didn't appeal to me.
 
-Instead, I turned to the command line and explored FFmpeg's compression parameters. With the help of GPT, I optimized them and created this script.
+Instead, I turned to the command line and explored FFmpeg's compression
+parameters. With the help of GPT, I optimized them and created this script.
 
-Additionally, I needed a way to compress videos under 5 MB to embed them into my free Notion plan — so I implemented a size-targeting mode as well.
+Additionally, I needed a way to compress videos under 5 MB to embed them into my
+free Notion plan — so I implemented a size-targeting mode as well.
+
+The tool has since grown from a video script into a media tool: it now converts
+photos, supports HEIC/HEIF input, has remembered GUI settings, and is split into
+small modules under `compress_tool/`.
+
+## What's New
+
+* **Photo conversion** for common formats: JPG, PNG, BMP, TIFF, WebP, HEIC,
+  HEIF, and AVIF.
+* **Samsung HEIC support** through `pillow-heif`.
+* **Two photo modes**:
+  * `lossy`: keeps source resolution, applies EXIF orientation, and saves with
+    JPEG/WebP quality 60.
+  * `original`: keeps source resolution and saves with JPEG/WebP quality 95;
+    JPEG output preserves EXIF/ICC where Pillow supports it.
+* **No photo resizing in lossy mode**. Resolution is preserved unless EXIF
+  orientation changes width/height by rotating the image.
+* **Image output formats**: `jpg`, `png`, `webp`.
+* **Mixed-media CLI mode**: videos and photos can be passed together.
+* **Image-only CLI mode**: `compress.py image ...`.
+* **GUI now accepts images and videos**.
+* **GUI remembers settings** for the `5MB video` toggle and `Photo` mode.
 
 ## Features
 
-* **CRF-Based Compression**: Adjust the Constant Rate Factor (`-crf`) and encoding preset (`-preset`).
-* **Size-Based Compression**: Target a fixed output size (\~4.5 MB) by automatically adjusting bitrate and resolution.
-* **Batch Processing**: Accepts individual files or directories (recursively searches for supported video extensions).
-* **Multithreaded Execution**: Utilizes `ThreadPoolExecutor` for parallel processing (up to 4 workers by default).
-* **Rich Progress Display**: Shows a real-time progress bar with estimated time remaining (powered by the [Rich](https://github.com/Textualize/rich) library).
-* **Windows Integration**: A `.bat` wrapper and a PowerShell installer script to add a **Compress video (FFmpeg)** entry to the Windows context menu.
-* **Drag-and-Drop GUI**: Launch the script without arguments (or with `--gui`) to open a drag-and-drop interface. Files convert in parallel with per-file progress percentages and an overall progress display.
+* **Video CRF-based compression**: Adjust the Constant Rate Factor (`-crf`) and
+  encoding preset (`-preset`).
+* **Video size-based compression**: Target a fixed output size (~4.5 MB) by
+  automatically adjusting bitrate and resolution.
+* **Photo conversion**: Convert common image formats, including `.heic` and
+  `.heif`, to JPEG, PNG, or WebP.
+* **Batch processing**: Accept individual files or directories and recursively
+  search for supported media.
+* **Multithreaded execution**: Uses `ThreadPoolExecutor` for parallel processing
+  up to 4 workers by default.
+* **Rich progress display**: Shows real-time progress bars with estimated time
+  remaining.
+* **Drag-and-drop GUI**: Launch without arguments or with `--gui`. Files convert
+  in parallel with per-file progress and an overall progress bar.
+* **Persisted GUI settings**: The GUI remembers the last `5MB video` toggle and
+  selected photo mode between launches.
+* **Optional Windows integration**: `.bat` wrapper and PowerShell installer for
+  a **Compress media** Explorer context-menu entry.
 
-## Supported Video Formats
+## Supported Formats
+
+### Videos
 
 `*.mp4`, `*.mkv`, `*.avi`, `*.mov`, `*.flv`, `*.wmv`, `*.webm`
 
-## Prerequisites
+### Images
 
-* **Python 3.6+**
-* **FFmpeg** (must be available in your `PATH`)
-* Windows (for `.bat` and PowerShell scripts)
-* PowerShell (for context-menu installation)
+`*.jpg`, `*.jpeg`, `*.jfif`, `*.png`, `*.bmp`, `*.tif`, `*.tiff`, `*.webp`,
+`*.heic`, `*.heif`, `*.avif`
+
+### Image Output Formats
+
+`jpg`, `png`, `webp`
+
+## Requirements
+
+Required on every system:
+
+* **Python 3.10+**
+* Python packages from `requirements.txt`
+
+Required for video conversion:
+
+* **FFmpeg and ffprobe** in `PATH`
+
+Required for GUI mode:
+
+* Python `tkinter`
+* `tkinterdnd2`
+* Native TkDND support for drag-and-drop on systems where the wheel does not
+  bundle it correctly
+
+Optional Windows-only integration:
+
+* Windows
+* PowerShell
+* `win_install.ps1`
 
 ## Installation
 
@@ -40,17 +114,52 @@ Additionally, I needed a way to compress videos under 5 MB to embed them into my
    cd <repository-directory>
    ```
 
-2. **Install Python dependencies**:
+2. **Create and activate a virtual environment**:
+
+   Windows PowerShell:
+
+   ```powershell
+   py -3 -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+   macOS / Linux:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Install Python dependencies**:
 
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Ensure FFmpeg is installed** and accessible from the command line.
-   On Windows, you can install via [winget](https://learn.microsoft.com/windows/package-manager/winget/):
+4. **Install FFmpeg** if you need video conversion.
+
+   Windows:
 
    ```powershell
    winget install --exact --id FFmpeg.FFmpeg -e
+   ```
+
+   macOS:
+
+   ```bash
+   brew install ffmpeg
+   ```
+
+   Debian / Ubuntu:
+
+   ```bash
+   sudo apt install ffmpeg python3-tk
+   ```
+
+   Fedora:
+
+   ```bash
+   sudo dnf install ffmpeg python3-tkinter
    ```
 
 ### macOS: TkinterDnD2 setup
@@ -79,14 +188,18 @@ Drag-and-drop support on macOS requires the native TkDND library. Install the Py
 
 ### Setup bash / zsh
 
+This is optional, but convenient on macOS and Linux:
+
 ```shell
-chmod +x compress.py 
+chmod +x compress.py
 sudo ln -sf /pathToScript/compress.py /usr/local/bin/compress
 ```
 
 ### Windows Context Menu & PowerShell Integration
 
-To add a **Compress video (FFmpeg)** entry to the right-click menu:
+This section is Windows-only. The tool itself also works without this installer.
+
+To add a **Compress media** entry to the right-click menu:
 
 1. **Run** the PowerShell installer as Administrator:
 
@@ -96,50 +209,145 @@ To add a **Compress video (FFmpeg)** entry to the right-click menu:
 
 2. **Restart** Windows Explorer or open a new File Explorer window.
 
-3. **Right-click** any supported video file or folder and choose **Compress video (FFmpeg)**.
+3. **Right-click** any supported media file or folder and choose
+   **Compress media**.
 
-This installer will also automatically install FFmpeg via `winget` if it is not already present. It will create a **Video Compress** shortcut in your Start Menu and pin it to the taskbar for quick access to the drag-and-drop GUI.
-
+The installer creates a local `.venv`, installs dependencies, checks FFmpeg,
+adds a `compress` PowerShell helper, creates a Start Menu shortcut, and adds the
+Explorer context-menu entry.
 
 ## Usage
 
-### 1. CRF-Based Mode (Default)
+### 1. Default Mixed-Media Mode
 
-Compress one or more videos or folders of videos using a CRF factor:
+Compress one or more videos and convert one or more photos. Directories are
+searched recursively.
 
-```bash
-# Using the batch wrapper:
-compress.bat video1.mp4 /path/to/videos_folder
+Windows examples:
 
-# Or directly with Python:
-python compress.py video1.mp4 /path/to/videos_folder -crf 28 -preset fast
+```powershell
+compress.bat video1.mp4 photo1.heic D:\Media
+python compress.py video1.mp4 photo1.heic D:\Media -crf 28 -preset fast
+python compress.py D:\Photos --image-mode original --image-format jpg
 ```
 
-* **`-crf`**: Integer Constant Rate Factor (default: 30).
-* **`-preset`**: Encoding speed preset (e.g., `ultrafast`, `fast`, `medium`, `slow`).
-
-### 2. Size-Based Mode
-
-Compress videos to a fixed target size (\~4.5 MB). Pass `5` as the first argument:
+macOS / Linux examples:
 
 ```bash
-# Using the batch wrapper:
-compress.bat 5 video1.mp4 /path/to/videos_folder
+python3 compress.py video1.mp4 photo1.heic ~/Media -crf 28 -preset fast
+python3 compress.py ~/Photos --image-mode original --image-format jpg
+compress ~/Photos --image-mode lossy
+```
 
-# Or directly with Python:
+Videos use CRF mode by default. Images use `lossy` mode by default.
+
+* **`-crf`**: Integer Constant Rate Factor for video (default: 30).
+* **`-preset`**: FFmpeg encoding speed preset for video, for example
+  `ultrafast`, `fast`, `medium`, `slow` (default: `slow`).
+* **`--image-mode`**: `lossy` or `original` (default: `lossy`).
+* **`--image-format`**: `jpg`, `png`, or `webp` (default: `jpg`).
+
+Default output names:
+
+* video CRF: `name_compressed.mp4`
+* image lossy: `name_compressed.jpg`
+* image original: `name_converted.jpg`
+
+### 2. Video Size-Based Mode
+
+Compress videos to a fixed target size (~4.5 MB). Pass `5` as the first
+argument:
+
+```bash
 python compress.py 5 video1.mp4 /path/to/videos_folder
 ```
 
-The script will calculate the required video bitrate and downscale resolution as needed to meet the size target.
+On Windows, the batch wrapper works too:
 
-### 3. GUI Mode
+```powershell
+compress.bat 5 video1.mp4 D:\Videos
+```
 
-Launch the script without any arguments (or pass `--gui`) to open a drag-and-drop interface. Drop multiple videos onto the window or use the **Add Videos** button. Conversion begins immediately in parallel threads, and each row displays progress in percent. A bar at the bottom shows overall progress. Use the 5 MB toggle to switch between size and CRF compression modes.
+The script calculates the required video bitrate and downscales resolution as
+needed to meet the size target. Outputs are named `name_smaller.mp4`.
 
-## File Overview
+### 3. Image-Only Mode
 
-* **`compress.py`**: Core Python script implementing compression logic.
+Use this when you only want photos processed and do not want video inputs
+considered.
+
+```bash
+python compress.py image /path/to/photos --mode lossy
+python compress.py image /path/to/photos --mode original --format jpg
+python compress.py photo IMG_001.heic --mode original --format webp
+```
+
+On systems where the executable is `python3`, use `python3` instead of `python`.
+
+Image modes:
+
+* **`lossy`**: Keeps source resolution, applies EXIF orientation, and saves with
+  JPEG/WebP quality 60.
+* **`original`**: Keeps source resolution and saves with JPEG/WebP quality 95;
+  JPEG output preserves EXIF/ICC where Pillow supports it.
+
+Image output behavior:
+
+* JPEG output flattens alpha onto a white background.
+* PNG output is optimized and preserves alpha when possible.
+* WebP output uses quality 60 in `lossy` mode and quality 95 in `original`
+  mode.
+* Source files are not deleted.
+
+### 4. GUI Mode
+
+Launch the script without any arguments or pass `--gui`:
+
+```bash
+python compress.py
+python compress.py --gui
+```
+
+On macOS / Linux, use `python3` if that is your Python command:
+
+```bash
+python3 compress.py --gui
+```
+
+Drop multiple videos or images onto the window or use the **Add Media** button.
+Conversion begins immediately in parallel threads. Each row displays per-file
+progress, and the top bar shows overall progress.
+
+GUI controls:
+
+* **5MB video**: Toggles video size-targeting mode for newly added videos.
+* **Photo**: Selects `lossy` or `original` for newly added images.
+* **`<>` column**: Enqueues the same file again with the alternate mode.
+* Double-click a row to open the source file's folder.
+
+The GUI remembers the last `5MB video` and `Photo` settings between launches.
+
+Persisted settings paths:
+
+* Windows: `%LOCALAPPDATA%\MediaCompress\settings.json`
+* macOS: `~/Library/Application Support/MediaCompress/settings.json`
+* Linux: `${XDG_CONFIG_HOME}/media-compress/settings.json` or
+  `~/.config/media-compress/settings.json`
+
+## Useful Files
+
+* **`compress.py`**: Main entry point for CLI and GUI usage.
 * **`compress.bat`**: Windows batch wrapper for console mode.
-* **`launch_gui.vbs`**: Script to start the GUI without a console window.
-* **`win_install.ps1`**: PowerShell script to install context-menu hooks, ensure FFmpeg is installed, and create Start Menu/taskbar shortcuts.
-* **`requirements.txt`**: Lists Python dependencies (`rich`, `tkinterdnd2`).
+* **`launch_gui.vbs`**: Windows helper to start the GUI without a console
+  window.
+* **`win_install.ps1`**: Windows-only PowerShell installer for context-menu
+  hooks, dependencies, and Start Menu shortcuts.
+* **`requirements.txt`**: Python dependencies.
+
+## Notes
+
+* Video work requires FFmpeg and ffprobe.
+* Image-only work does not require FFmpeg.
+* HEIC/HEIF support depends on `pillow-heif`.
+* AVIF support depends on the installed Pillow build.
+* The Windows context menu is optional and does not affect macOS or Linux usage.

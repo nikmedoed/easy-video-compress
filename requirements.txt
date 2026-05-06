@@ -1,3 +1,4 @@
 rich
 tkinterdnd2
 pillow
+pillow-heif
