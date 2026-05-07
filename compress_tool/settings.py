@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .constants import APP_DIR_NAME
+
 
 @dataclass
 class GuiSettings:
@@ -13,6 +15,18 @@ class GuiSettings:
 
 
 def settings_path() -> Path:
+    if sys.platform.startswith("win"):
+        base = os.getenv("LOCALAPPDATA")
+        if base:
+            return Path(base) / APP_DIR_NAME / "settings.json"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_DIR_NAME / "settings.json"
+    config_home = os.getenv("XDG_CONFIG_HOME")
+    root = Path(config_home) if config_home else Path.home() / ".config"
+    return root / "easy-media-compress" / "settings.json"
+
+
+def legacy_settings_path() -> Path:
     if sys.platform.startswith("win"):
         base = os.getenv("LOCALAPPDATA")
         if base:
@@ -26,6 +40,10 @@ def settings_path() -> Path:
 
 def load_gui_settings() -> GuiSettings:
     path = settings_path()
+    if not path.exists():
+        legacy_path = legacy_settings_path()
+        if legacy_path.exists():
+            path = legacy_path
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

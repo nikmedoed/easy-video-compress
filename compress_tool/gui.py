@@ -8,9 +8,10 @@ from pathlib import Path
 from tkinter import BooleanVar, StringVar, filedialog, ttk
 
 import tkinter as tk
+from tkinter import messagebox
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
-from .constants import CREATE_NO_WINDOW, IMAGE_EXTS, MAX_WORKERS, VIDEO_EXTS, WINDOWS_APP_ID
+from .constants import APP_NAME, CREATE_NO_WINDOW, IMAGE_EXTS, MAX_WORKERS, VIDEO_EXTS, WINDOWS_APP_ID
 from .image import convert_image, get_image_info, image_output_path
 from .settings import GuiSettings, load_gui_settings, save_gui_settings
 from .ui import console, ensure_icon_ico
@@ -75,7 +76,7 @@ def run_gui():
             pass
 
     root = TkinterDnD.Tk()
-    root.title("Media Compress")
+    root.title(APP_NAME)
     try:
         icon_dir = ensure_icon_ico()
         if sys.platform.startswith("win"):
@@ -259,6 +260,7 @@ def run_gui():
 
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
     gui_queue: "queue.Queue[tuple]" = queue.Queue()
+    shown_errors: set[str] = set()
 
     def update_overall():
         if total:
@@ -299,7 +301,9 @@ def run_gui():
                     update_overall()
                 elif kind == "error":
                     row = msg[1]
-                    tree.set(row, "result", "error")
+                    error_text = str(msg[2]) if len(msg) > 2 else "Unknown error"
+                    short_error = error_text.splitlines()[0][:80] or "error"
+                    tree.set(row, "result", short_error)
                     progress_vals[row] = 0
                     info[row]["done"] = True
                     tree.item(row, tags=("error",))
@@ -307,6 +311,9 @@ def run_gui():
                     scroll_to_current()
                     done += 1
                     update_overall()
+                    if error_text not in shown_errors:
+                        shown_errors.add(error_text)
+                        messagebox.showerror(APP_NAME, error_text)
         except queue.Empty:
             pass
         root.after(100, process_gui_queue)
@@ -432,7 +439,7 @@ def run_gui():
             gui_queue.put(("finish", row, size_mb))
         except Exception as e:
             console.log(f"[red]Error {path.name}: {e}[/]")
-            gui_queue.put(("error", row))
+            gui_queue.put(("error", row, str(e)))
 
     root.after(100, scroll_to_current)
     root.after(100, process_gui_queue)

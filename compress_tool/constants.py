@@ -31,4 +31,6 @@ IMAGE_LOSSY_QUALITY = 60
 IMAGE_ORIGINAL_QUALITY = 95
 IMAGE_OUTPUT_FORMATS = {"jpg", "jpeg", "png", "webp"}
 
+APP_NAME = "Easy Media Compress"
+APP_DIR_NAME = "EasyMediaCompress"
 WINDOWS_APP_ID = "AlignTech.EasyMediaCompress"

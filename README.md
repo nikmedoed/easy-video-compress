@@ -1,4 +1,4 @@
-# Media Compression Tool
+# Easy Media Compress
 
 A cross-platform, multithreaded Python tool for compressing videos with FFmpeg
 and converting photos with Pillow. It works on Windows, macOS, and Linux. The
@@ -63,8 +63,13 @@ small modules under `compress_tool/`.
   in parallel with per-file progress and an overall progress bar.
 * **Persisted GUI settings**: The GUI remembers the last `5MB video` toggle and
   selected photo mode between launches.
+* **Self-contained FFmpeg handling**: Video mode looks for FFmpeg next to the
+  app and in `PATH`; when it is missing, the tool can install it through the OS
+  package manager.
 * **Optional Windows integration**: `.bat` wrapper and PowerShell installer for
-  a **Compress media** Explorer context-menu entry.
+  an **Easy Media Compress** Explorer context-menu entry.
+* **One-file builds**: PyInstaller builds are available for Windows, macOS, and
+  Linux. Builds stay small and use system FFmpeg at runtime.
 
 ## Supported Formats
 
@@ -90,7 +95,9 @@ Required on every system:
 
 Required for video conversion:
 
-* **FFmpeg and ffprobe** in `PATH`
+* **FFmpeg and ffprobe**. The tool tries to install them when missing through
+  `winget` on Windows, `brew`/`port` on macOS, or `apt-get`, `dnf`, `pacman`,
+  `zypper`, or `apk` on Linux.
 
 Required for GUI mode:
 
@@ -104,6 +111,21 @@ Optional Windows-only integration:
 * Windows
 * PowerShell
 * `win_install.ps1`
+
+## Recommended Usage Model
+
+The author's preferred way to use this project is from source rather than as a
+binary bundle. Keeping a local clone plus a virtual environment makes updates
+simple: pull the latest changes, update Python dependencies when needed, and
+continue using the same scripts, context-menu integration, and settings without
+reinstalling the app.
+
+Executable builds are still provided for less technical users who want to
+download one file and run it. They contain the Python app and its Python
+dependencies, but they do not bundle FFmpeg. When video conversion needs FFmpeg,
+the tool first checks the app folder and `PATH`; if FFmpeg is missing, it tries
+to install the system package through `winget` on Windows, `brew`/`port` on
+macOS, or a supported Linux package manager.
 
 ## Installation
 
@@ -136,12 +158,13 @@ Optional Windows-only integration:
    pip install -r requirements.txt
    ```
 
-4. **Install FFmpeg** if you need video conversion.
+4. **Install FFmpeg** manually only if automatic setup is not suitable. The tool
+   attempts to call your package manager when FFmpeg is missing.
 
    Windows:
 
    ```powershell
-   winget install --exact --id FFmpeg.FFmpeg -e
+   winget install --exact --id Gyan.FFmpeg --source winget
    ```
 
    macOS:
@@ -199,7 +222,7 @@ sudo ln -sf /pathToScript/compress.py /usr/local/bin/compress
 
 This section is Windows-only. The tool itself also works without this installer.
 
-To add a **Compress media** entry to the right-click menu:
+To add an **Easy Media Compress** entry to the right-click menu:
 
 1. **Run** the PowerShell installer as Administrator:
 
@@ -210,11 +233,133 @@ To add a **Compress media** entry to the right-click menu:
 2. **Restart** Windows Explorer or open a new File Explorer window.
 
 3. **Right-click** any supported media file or folder and choose
-   **Compress media**.
+   **Easy Media Compress**.
 
-The installer creates a local `.venv`, installs dependencies, checks FFmpeg,
-adds a `compress` PowerShell helper, creates a Start Menu shortcut, and adds the
-Explorer context-menu entry.
+The installer creates a local `.venv`, installs dependencies, ensures FFmpeg
+through `winget` when needed, adds a `compress` PowerShell helper, creates a
+Start Menu shortcut, and adds the Explorer context-menu entry.
+
+### Build an Executable
+
+To build a one-file executable locally:
+
+Windows PowerShell:
+
+```powershell
+.\build.ps1
+```
+
+macOS / Linux:
+
+```bash
+python scripts/build.py --install-deps
+```
+
+The output is `dist\EasyMediaCompress.exe` on Windows and
+`dist/EasyMediaCompress` on macOS/Linux. It is a single universal executable:
+running it without arguments opens the GUI, while passing files, folders, or CLI
+options runs terminal mode. On Windows, GUI launch detaches from the temporary
+console immediately so the GUI does not keep a terminal window open.
+
+Build options:
+
+```powershell
+.\build.ps1 -OneDir
+.\build.ps1 -Name EasyMediaCompress
+```
+
+Builds do not bundle FFmpeg binaries. They use the runtime resolver, which
+checks the app folder and `PATH`, then attempts a package-manager install if
+FFmpeg is missing.
+
+### Release Builds
+
+GitHub Actions builds and publishes release assets automatically when a tag
+matching `v*.*.*` is pushed:
+
+* `EasyMediaCompress-<tag>-windows-x64.exe`
+* `EasyMediaCompress-<tag>-macos-x64.tar.gz`
+* `EasyMediaCompress-<tag>-macos-arm64.tar.gz`
+* `EasyMediaCompress-<tag>-linux-x64.tar.gz`
+
+Example:
+
+```powershell
+git tag v0.0.0
+git push origin v0.0.0
+```
+
+## Troubleshooting
+
+### FFmpeg setup
+
+Video conversion requires `ffmpeg` and `ffprobe`. The tool checks the app
+folder and `PATH` first. If FFmpeg is missing, it tries to install it with the
+native package manager.
+
+Manual install commands:
+
+```powershell
+winget install --exact --id Gyan.FFmpeg --source winget
+```
+
+```bash
+brew install ffmpeg
+sudo apt update && sudo apt install ffmpeg
+sudo dnf install ffmpeg
+sudo pacman -Sy ffmpeg
+sudo zypper install ffmpeg
+sudo apk add ffmpeg
+```
+
+If there is no internet connection, the automatic install will fail and the
+tool will try again the next time video conversion needs FFmpeg.
+
+If `winget`, `brew`, or another supported package manager is unavailable or
+blocked by policy, install FFmpeg manually and make sure `ffmpeg` plus
+`ffprobe` are available in `PATH`.
+
+On Linux, GUI launches may need elevated privileges to install packages. The
+tool tries `pkexec` when a graphical session is available. If that is not
+installed, run the tool from a terminal so `sudo` can ask for a password, or
+install FFmpeg manually before launching the GUI.
+
+### GUI dependencies
+
+If the GUI does not start because Tkinter or TkDND is missing, install the
+platform GUI packages and rerun the app.
+
+Windows:
+
+```powershell
+pip install -r requirements.txt
+```
+
+macOS:
+
+```bash
+brew install python-tk
+pip install -r requirements.txt
+```
+
+Debian / Ubuntu:
+
+```bash
+sudo apt install python3-tk
+pip install -r requirements.txt
+```
+
+Fedora:
+
+```bash
+sudo dnf install python3-tkinter
+pip install -r requirements.txt
+```
+
+Packaged release builds include the Python application dependencies, but Linux
+desktop environments can still require native Tk/GUI libraries from the OS.
+When that happens, install the GUI package for your distribution and run the
+app again.
 
 ## Usage
 
@@ -329,10 +474,10 @@ The GUI remembers the last `5MB video` and `Photo` settings between launches.
 
 Persisted settings paths:
 
-* Windows: `%LOCALAPPDATA%\MediaCompress\settings.json`
-* macOS: `~/Library/Application Support/MediaCompress/settings.json`
-* Linux: `${XDG_CONFIG_HOME}/media-compress/settings.json` or
-  `~/.config/media-compress/settings.json`
+* Windows: `%LOCALAPPDATA%\EasyMediaCompress\settings.json`
+* macOS: `~/Library/Application Support/EasyMediaCompress/settings.json`
+* Linux: `${XDG_CONFIG_HOME}/easy-media-compress/settings.json` or
+  `~/.config/easy-media-compress/settings.json`
 
 ## Useful Files
 
@@ -342,11 +487,16 @@ Persisted settings paths:
   window.
 * **`win_install.ps1`**: Windows-only PowerShell installer for context-menu
   hooks, dependencies, and Start Menu shortcuts.
+* **`build.ps1`**: Windows wrapper for the PyInstaller build script.
+* **`scripts/build.py`**: Cross-platform PyInstaller build script for one-file
+  executables.
 * **`requirements.txt`**: Python dependencies.
+* **`requirements-build.txt`**: PyInstaller build dependency.
 
 ## Notes
 
-* Video work requires FFmpeg and ffprobe.
+* Video work requires FFmpeg and ffprobe; the tool can invoke supported package
+  managers when they are not already installed.
 * Image-only work does not require FFmpeg.
 * HEIC/HEIF support depends on `pillow-heif`.
 * AVIF support depends on the installed Pillow build.

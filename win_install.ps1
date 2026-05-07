@@ -113,19 +113,22 @@ from pathlib import Path
 import importlib.util
 
 module_path = Path(r"$compressPy")
-spec = importlib.util.spec_from_file_location("compress_module", module_path)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-module.ensure_icon_ico()
+root = module_path.parent
+import sys
+sys.path.insert(0, str(root))
+from compress_tool.ui import ensure_icon_ico
+ensure_icon_ico()
 "@ | & $venvPython -
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning 'Could not prebuild icon assets from compress.py. The app will try again on launch.'
+    Write-Warning 'Could not prebuild icon assets. The app will try again on launch.'
 }
 
 Write-Step 'Refreshing old context-menu entries'
 $oldKeys = @(
     'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo',
-    'HKCU:\Software\Classes\Directory\shell\CompressVideo'
+    'HKCU:\Software\Classes\Directory\shell\CompressVideo',
+    'HKCU:\Software\Classes\AllFileSystemObjects\shell\MediaCompress',
+    'HKCU:\Software\Classes\Directory\shell\MediaCompress'
 )
 
 $exts = '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm',
@@ -134,6 +137,7 @@ $exts = '.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm',
 
 foreach ($ext in $exts) {
     $oldKeys += "HKCU:\Software\Classes\SystemFileAssociations\$ext\shell\CompressVideo"
+    $oldKeys += "HKCU:\Software\Classes\SystemFileAssociations\$ext\shell\MediaCompress"
 }
 
 foreach ($key in $oldKeys) {
@@ -143,10 +147,10 @@ foreach ($key in $oldKeys) {
 }
 
 Write-Step 'Creating Explorer context-menu entry'
-$baseKey = 'HKCU:\Software\Classes\AllFileSystemObjects\shell\CompressVideo'
+$baseKey = 'HKCU:\Software\Classes\AllFileSystemObjects\shell\EasyMediaCompress'
 New-Item -Path $baseKey -Force | Out-Null
 
-$label = 'Compress media'
+$label = 'Easy Media Compress'
 Set-ItemProperty -Path $baseKey -Name '(Default)' -Value $label
 
 if (Test-Path -LiteralPath $icon) {
@@ -183,19 +187,10 @@ New-Item -Path $cmdKey -Force | Out-Null
 $command = 'cmd.exe /c ""{0}" %V"' -f $bat
 Set-ItemProperty -Path $cmdKey -Name '(Default)' -Value $command
 
-Write-Step 'Checking ffmpeg'
-if (-not (Test-CommandExists 'ffmpeg')) {
-    if (Test-CommandExists 'winget') {
-        Write-Host 'ffmpeg was not found. Installing via winget for the current user...'
-        & winget install --exact --id FFmpeg.FFmpeg -e --source winget --scope user | Out-Host
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning 'winget could not install ffmpeg automatically. Install ffmpeg manually and ensure it is in PATH.'
-        }
-    } else {
-        Write-Warning 'ffmpeg was not found and winget is unavailable. Install ffmpeg manually and ensure it is in PATH.'
-    }
-} else {
-    Write-Host 'ffmpeg is already available in PATH.'
+Write-Step 'Ensuring FFmpeg'
+& $venvPython -m compress_tool.ffmpeg --install | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'Could not install FFmpeg automatically. Video conversion will retry on first run or use ffmpeg from PATH.'
 }
 
 Write-Step 'Adding PowerShell helper function'
@@ -232,14 +227,14 @@ $shortcutTarget = if (Test-Path -LiteralPath $venvPythonw) { $venvPythonw } else
 $shortcutArgs = ('"{0}" --gui' -f $compressPy)
 
 $startMenu = [Environment]::GetFolderPath('Programs')
-$startMenuShortcut = Join-Path $startMenu 'Media Compress.lnk'
+$startMenuShortcut = Join-Path $startMenu 'Easy Media Compress.lnk'
 New-Shortcut `
     -ShortcutPath $startMenuShortcut `
     -TargetPath $shortcutTarget `
     -Arguments $shortcutArgs `
     -WorkingDirectory $root `
     -IconLocation $iconLocationShortcut `
-    -Description 'Launch Media Compress GUI'
+    -Description 'Launch Easy Media Compress GUI'
 Write-Host "Shortcut created: $startMenuShortcut"
 
 Write-Host ""

@@ -16,6 +16,29 @@ from .ui import console
 from .video import compress_video, find_all_videos
 
 
+GUI_DEPENDENCY_HELP = """GUI dependencies are missing.
+
+Install the Python GUI packages for your OS, then run the GUI again.
+
+Windows:
+  pip install -r requirements.txt
+
+macOS:
+  brew install python-tk
+  pip install -r requirements.txt
+
+Debian / Ubuntu:
+  sudo apt install python3-tk
+  pip install -r requirements.txt
+
+Fedora:
+  sudo dnf install python3-tkinter
+  pip install -r requirements.txt
+
+See README.md -> Troubleshooting -> GUI dependencies.
+"""
+
+
 def build_default_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="compress")
     parser.add_argument("inputs", nargs="+")
@@ -123,7 +146,12 @@ def run_mixed_default(args: list[str]) -> None:
 def main():
     args = sys.argv[1:]
     if not args or args[0] in {"gui", "--gui"}:
-        from .gui import run_gui
+        try:
+            from .gui import run_gui
+        except ImportError as exc:
+            console.print(f"[red]{GUI_DEPENDENCY_HELP}[/]")
+            console.print(f"[yellow]Import error: {exc}[/]")
+            sys.exit(1)
 
         run_gui()
         return

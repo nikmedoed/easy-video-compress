@@ -13,13 +13,14 @@ from .constants import (
     TARGET_MB,
     VIDEO_EXTS,
 )
+from .ffmpeg import ffmpeg_cmd, ffprobe_cmd
 from .ui import console
 
 
 def get_duration(path: Path) -> float:
     out = subprocess.run(
         [
-            "ffprobe",
+            ffprobe_cmd(),
             "-v",
             "error",
             "-show_entries",
@@ -42,7 +43,7 @@ def get_duration(path: Path) -> float:
 def probe_video(path: Path) -> tuple[int, int]:
     out = subprocess.run(
         [
-            "ffprobe",
+            ffprobe_cmd(),
             "-v",
             "error",
             "-select_streams",
@@ -139,7 +140,7 @@ def run_with_progress(cmd: list[str], duration: float, task, progress: Progress)
 
 def build_video_args(path: Path, output: Path, mode: str, crf: int, preset: str) -> list[str]:
     dur = get_duration(path)
-    base = ["ffmpeg", "-y", "-i", str(path)] + COMMON_VARGS
+    base = [ffmpeg_cmd(), "-y", "-i", str(path)] + COMMON_VARGS
 
     if mode == "crf":
         return base + ["-preset", preset, "-crf", str(crf)] + COMMON_AARGS + [str(output)]
@@ -178,7 +179,7 @@ def get_video_info(path: Path) -> tuple[float, str, int]:
     dur = get_duration(path)
     out = subprocess.run(
         [
-            "ffprobe",
+            ffprobe_cmd(),
             "-v",
             "error",
             "-select_streams",
