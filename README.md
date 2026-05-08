@@ -285,7 +285,6 @@ GitHub Actions builds and publishes release assets automatically when a tag
 matching `v*.*.*` is pushed:
 
 * `EasyMediaCompress-<tag>-windows-x64.exe`
-* `EasyMediaCompress-<tag>-macos-x64.tar.gz`
 * `EasyMediaCompress-<tag>-macos-arm64.tar.gz`
 * `EasyMediaCompress-<tag>-linux-x64.tar.gz`
 
