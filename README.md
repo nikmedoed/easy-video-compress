@@ -296,6 +296,11 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+If a tag already exists and the workflow did not run, open the `Release`
+workflow in GitHub Actions, choose **Run workflow**, and enter the existing tag
+name. The manual run checks out that tag, embeds the same version, builds the
+assets, and creates the GitHub Release.
+
 Release builds embed the version automatically from the tag name. In GitHub
 Actions this comes from `GITHUB_REF_NAME`; local builds use the latest git tag.
 If no tag is available, the build falls back to the default version in

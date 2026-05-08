@@ -18,7 +18,7 @@ from . import __version__
 from .constants import APP_DIR_NAME, CREATE_NO_WINDOW
 
 GITHUB_API_LATEST_RELEASE = (
-    "https://api.github.com/repos/nikmedoed/easy-video-compress/releases/latest"
+    "https://api.github.com/repos/nikmedoed/easy-media-compress/releases/latest"
 )
 REQUEST_TIMEOUT_SECONDS = 12
 
