@@ -5,6 +5,7 @@ from pathlib import Path
 
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
+from . import __version__
 from .constants import IMAGE_OUTPUT_FORMATS, MAX_WORKERS
 from .image import (
     find_all_images,
@@ -145,6 +146,10 @@ def run_mixed_default(args: list[str]) -> None:
 
 def main():
     args = sys.argv[1:]
+    if args and args[0] in {"--version", "version"}:
+        console.print(__version__)
+        return
+
     if not args or args[0] in {"gui", "--gui"}:
         try:
             from .gui import run_gui

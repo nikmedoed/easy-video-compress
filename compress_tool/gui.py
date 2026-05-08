@@ -2,6 +2,7 @@ import os
 import queue
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -15,6 +16,7 @@ from .constants import APP_NAME, CREATE_NO_WINDOW, IMAGE_EXTS, MAX_WORKERS, VIDE
 from .image import convert_image, get_image_info, image_output_path
 from .settings import GuiSettings, load_gui_settings, save_gui_settings
 from .ui import console, ensure_icon_ico
+from .updater import UpdateInfo, check_for_update, current_version, download_and_install_update
 from .video import compress_video_gui, get_video_info
 
 
@@ -257,10 +259,67 @@ def run_gui():
     overall_bar.pack(side="left", fill="x", expand=True, padx=5)
     overall_label = ttk.Label(top, text="0/0")
     overall_label.pack(side="left", padx=5)
+    update_label = ttk.Label(top, text="")
+    update_label.pack(side="left", padx=5)
 
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
     gui_queue: "queue.Queue[tuple]" = queue.Queue()
     shown_errors: set[str] = set()
+
+    def set_update_label(text: str) -> None:
+        update_label.config(text=text)
+        root.update_idletasks()
+
+    def offer_update(update: UpdateInfo) -> None:
+        if total != done:
+            messagebox.showinfo(
+                APP_NAME,
+                "An update is available. Finish the current conversions, then restart the app to update.",
+            )
+            return
+
+        answer = messagebox.askyesno(
+            APP_NAME,
+            (
+                f"Version {update.version} is available.\n\n"
+                f"Current version: {current_version()}\n"
+                f"Download and install it now?"
+            ),
+        )
+        if not answer:
+            return
+
+        set_update_label("Updating...")
+
+        def progress(downloaded: int, total: int | None) -> None:
+            if not total:
+                return
+            percent = min(100, int(downloaded * 100 / total))
+            root.after(0, set_update_label, f"Updating {percent}%")
+
+        def install_worker() -> None:
+            try:
+                download_and_install_update(update, relaunch_args=["--gui"], progress=progress)
+            except Exception as exc:
+                root.after(0, set_update_label, "")
+                root.after(0, messagebox.showerror, APP_NAME, f"Could not update:\n{exc}")
+                return
+            root.after(0, root.destroy)
+
+        threading.Thread(target=install_worker, daemon=True).start()
+
+    def check_updates_in_background() -> None:
+        def worker() -> None:
+            try:
+                update = check_for_update()
+            except Exception as exc:
+                console.log(f"[yellow]Update check skipped: {exc}[/]")
+                return
+            if update:
+                root.after(0, set_update_label, f"Update {update.version}")
+                root.after(0, offer_update, update)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def update_overall():
         if total:
@@ -444,4 +503,5 @@ def run_gui():
     root.after(100, scroll_to_current)
     root.after(100, process_gui_queue)
     root.after(1000, check_idle)
+    root.after(1500, check_updates_in_background)
     root.mainloop()

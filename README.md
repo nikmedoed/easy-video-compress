@@ -272,6 +272,13 @@ Builds do not bundle FFmpeg binaries. They use the runtime resolver, which
 checks the app folder and `PATH`, then attempts a package-manager install if
 FFmpeg is missing.
 
+Packaged builds check GitHub Releases for updates when the GUI starts. The
+check is disabled when running from source, so local development never replaces
+files. On Windows, the `.exe` downloads the latest `windows-x64.exe` asset,
+starts a small PowerShell helper, exits, replaces itself, and relaunches the
+GUI. macOS and Linux release assets are detected, but automatic replacement is
+not enabled for archive builds yet.
+
 ### Release Builds
 
 GitHub Actions builds and publishes release assets automatically when a tag
@@ -285,9 +292,21 @@ matching `v*.*.*` is pushed:
 Example:
 
 ```powershell
-git tag v0.0.0
-git push origin v0.0.0
+git tag v0.1.0
+git push origin v0.1.0
 ```
+
+Release builds embed the version automatically from the tag name. In GitHub
+Actions this comes from `GITHUB_REF_NAME`; local builds use the latest git tag.
+If no tag is available, the build falls back to the default version in
+`compress_tool/version.py`. You can override it explicitly:
+
+```powershell
+python scripts/build.py --version 0.1.0
+```
+
+The auto-updater compares the embedded version with the latest GitHub release
+tag.
 
 ## Troubleshooting
 
